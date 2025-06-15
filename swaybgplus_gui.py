@@ -112,12 +112,16 @@ class MonitorWidget(Gtk.DrawingArea):
         preview_surface = None
         if self.preview_image:
             try:
-                # Create a stretched version of the preview across all monitors
-                total_width = max(output.position[0] + output.resolution[0] for output in self.outputs) - min_x
-                total_height = max(output.position[1] + output.resolution[1] for output in self.outputs) - min_y
+                # Calculate the actual virtual screen bounds (using already calculated min values)
+                max_x = max(output.position[0] + output.resolution[0] for output in self.outputs)
+                max_y = max(output.position[1] + output.resolution[1] for output in self.outputs)
                 
-                # Resize preview image to virtual screen size
-                preview_resized = self.preview_image.resize((total_width, total_height), Image.Resampling.LANCZOS)
+                # Total virtual screen size
+                virtual_width = max_x - min_x
+                virtual_height = max_y - min_y
+                
+                # Resize preview image to match the actual virtual screen dimensions
+                preview_resized = self.preview_image.resize((virtual_width, virtual_height), Image.Resampling.LANCZOS)
                 
                 # Convert to RGBA format for Cairo
                 if preview_resized.mode != 'RGBA':
@@ -157,17 +161,28 @@ class MonitorWidget(Gtk.DrawingArea):
             # Draw preview image if available (overlay on top of background)
             if preview_surface:
                 cr.save()
+                
+                # Set clipping region to monitor bounds
                 cr.rectangle(x, y, width, height)
                 cr.clip()
                 
-                # Scale and position the preview
-                preview_x = (output.position[0] - min_x) * self.scale_factor
-                preview_y = (output.position[1] - min_y) * self.scale_factor
+                # Calculate the actual position of this monitor in the virtual screen
+                # This is the key fix - we need to map from monitor coordinates to image coordinates
+                monitor_x_in_virtual = output.position[0] - min_x  # Offset from virtual screen origin
+                monitor_y_in_virtual = output.position[1] - min_y  # Offset from virtual screen origin
                 
-                cr.scale(self.scale_factor, self.scale_factor)
-                cr.set_source_surface(preview_surface, preview_x / self.scale_factor - (output.position[0] - min_x), 
-                                    preview_y / self.scale_factor - (output.position[1] - min_y))
-                cr.paint_with_alpha(0.8)  # Make preview semi-transparent so we can see selection
+                # Position the image so that the correct portion appears on this monitor
+                # We translate to the monitor position, then offset by the negative of where
+                # this monitor appears in the virtual screen
+                cr.translate(x, y)  # Move to monitor position on screen
+                cr.scale(self.scale_factor, self.scale_factor)  # Scale to match monitor scaling
+                
+                # Set the image source with the correct offset
+                # The image represents the full virtual screen, so we need to show
+                # the portion that corresponds to this monitor's position
+                cr.set_source_surface(preview_surface, -monitor_x_in_virtual, -monitor_y_in_virtual)
+                cr.paint_with_alpha(0.9)  # Slightly transparent to show selection
+                
                 cr.restore()
             
             # Always draw border (on top of everything)
@@ -476,8 +491,8 @@ class SwayBGPlusGUI:
     def create_output_list(self, parent_frame):
         """Create the output list with inline editing capabilities"""
         list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        list_box.set_margin_left(12)
-        list_box.set_margin_right(12)
+        list_box.set_margin_start(12)
+        list_box.set_margin_end(12)
         list_box.set_margin_top(12)
         list_box.set_margin_bottom(12)
         

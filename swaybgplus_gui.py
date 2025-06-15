@@ -33,8 +33,11 @@ class MonitorWidget(Gtk.DrawingArea):
         self.scale_factor = 0.1  # Scale down monitors for display
         self.selected_output = None
         self.dragging = False
+        self.dragging_image = False  # New: for dragging image
         self.drag_start = (0, 0)
         self.preview_image = None  # Preview image to show on monitors
+        self.preview_mode = "stretched"  # Background mode for preview
+        self.image_offset = (0, 0)  # Image offset for repositioning
         
         self.set_size_request(800, 600)
         self.set_can_focus(True)
@@ -44,11 +47,13 @@ class MonitorWidget(Gtk.DrawingArea):
         self.connect('button-press-event', self.on_button_press)
         self.connect('button-release-event', self.on_button_release)
         self.connect('motion-notify-event', self.on_motion)
+        self.connect('key-press-event', self.on_key_press)
         
-        # Enable mouse events
+        # Enable mouse and keyboard events
         self.set_events(Gdk.EventMask.BUTTON_PRESS_MASK | 
                        Gdk.EventMask.BUTTON_RELEASE_MASK |
-                       Gdk.EventMask.POINTER_MOTION_MASK)
+                       Gdk.EventMask.POINTER_MOTION_MASK |
+                       Gdk.EventMask.KEY_PRESS_MASK)
         
         self.update_scale()
     
@@ -112,16 +117,9 @@ class MonitorWidget(Gtk.DrawingArea):
         preview_surface = None
         if self.preview_image:
             try:
-                # Calculate the actual virtual screen bounds (using already calculated min values)
-                max_x = max(output.position[0] + output.resolution[0] for output in self.outputs)
-                max_y = max(output.position[1] + output.resolution[1] for output in self.outputs)
-                
-                # Total virtual screen size
-                virtual_width = max_x - min_x
-                virtual_height = max_y - min_y
-                
-                # Resize preview image to match the actual virtual screen dimensions
-                preview_resized = self.preview_image.resize((virtual_width, virtual_height), Image.Resampling.LANCZOS)
+                # Always use the original image for preview surface creation
+                # The scaling and positioning will be handled in the drawing logic
+                preview_resized = self.preview_image
                 
                 # Convert to RGBA format for Cairo
                 if preview_resized.mode != 'RGBA':
@@ -160,29 +158,125 @@ class MonitorWidget(Gtk.DrawingArea):
             
             # Draw preview image if available (overlay on top of background)
             if preview_surface:
+                # Save the current Cairo state before any transformations
                 cr.save()
                 
-                # Set clipping region to monitor bounds
+                # Set clipping region to monitor bounds (in original coordinate system)
                 cr.rectangle(x, y, width, height)
                 cr.clip()
                 
-                # Calculate the actual position of this monitor in the virtual screen
-                # This is the key fix - we need to map from monitor coordinates to image coordinates
-                monitor_x_in_virtual = output.position[0] - min_x  # Offset from virtual screen origin
-                monitor_y_in_virtual = output.position[1] - min_y  # Offset from virtual screen origin
+                if self.preview_mode == "stretched":
+                    # For stretched mode, the image is stretched across the entire virtual screen
+                    # Calculate virtual screen dimensions
+                    max_x = max(output.position[0] + output.resolution[0] for output in self.outputs)
+                    max_y = max(output.position[1] + output.resolution[1] for output in self.outputs)
+                    virtual_width = max_x - min_x
+                    virtual_height = max_y - min_y
+                    
+                    # Get image dimensions
+                    img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
+                    
+                    # Position of this monitor in the virtual screen
+                    monitor_x_in_virtual = output.position[0] - min_x
+                    monitor_y_in_virtual = output.position[1] - min_y
+                    
+                    # Calculate the scaling factors to stretch image across virtual screen
+                    virtual_scale_x = virtual_width / img_width
+                    virtual_scale_y = virtual_height / img_height
+                    
+                    # Calculate which part of the original image appears on this monitor
+                    # (before any scaling is applied)
+                    img_start_x = monitor_x_in_virtual / virtual_scale_x + self.image_offset[0]
+                    img_start_y = monitor_y_in_virtual / virtual_scale_y + self.image_offset[1]
+                    
+                    # Apply transformations: translate to monitor position, scale for display
+                    cr.translate(x, y)
+                    cr.scale(self.scale_factor, self.scale_factor)
+                    cr.scale(virtual_scale_x, virtual_scale_y)
+                    
+                    # Position the image so the correct portion shows on this monitor
+                    cr.set_source_surface(preview_surface, -img_start_x, -img_start_y)
+                    cr.paint_with_alpha(0.9)
+                    
+                elif self.preview_mode == "fill":
+                    # Scale image to fill monitor, maintaining aspect ratio
+                    img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
+                    monitor_width, monitor_height = output.resolution[0], output.resolution[1]
+                    
+                    scale_x = monitor_width / img_width
+                    scale_y = monitor_height / img_height
+                    scale = max(scale_x, scale_y)  # Fill entire monitor
+                    
+                    scaled_width = img_width * scale
+                    scaled_height = img_height * scale
+                    
+                    # Center the scaled image
+                    offset_x_calc = (monitor_width - scaled_width) / 2 + self.image_offset[0]
+                    offset_y_calc = (monitor_height - scaled_height) / 2 + self.image_offset[1]
+                    
+                    cr.translate(x, y)
+                    cr.scale(self.scale_factor, self.scale_factor)
+                    cr.scale(scale, scale)
+                    cr.set_source_surface(preview_surface, offset_x_calc / scale, offset_y_calc / scale)
+                    cr.paint_with_alpha(0.9)
+                    
+                elif self.preview_mode == "fit":
+                    # Scale image to fit monitor, maintaining aspect ratio
+                    img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
+                    monitor_width, monitor_height = output.resolution[0], output.resolution[1]
+                    
+                    scale_x = monitor_width / img_width
+                    scale_y = monitor_height / img_height
+                    scale = min(scale_x, scale_y)  # Fit entire image
+                    
+                    scaled_width = img_width * scale
+                    scaled_height = img_height * scale
+                    
+                    # Center the scaled image
+                    offset_x_calc = (monitor_width - scaled_width) / 2 + self.image_offset[0]
+                    offset_y_calc = (monitor_height - scaled_height) / 2 + self.image_offset[1]
+                    
+                    cr.translate(x, y)
+                    cr.scale(self.scale_factor, self.scale_factor)
+                    cr.scale(scale, scale)
+                    cr.set_source_surface(preview_surface, offset_x_calc / scale, offset_y_calc / scale)
+                    cr.paint_with_alpha(0.9)
+                    
+                elif self.preview_mode == "center":
+                    # Center image without scaling
+                    img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
+                    monitor_width, monitor_height = output.resolution[0], output.resolution[1]
+                    
+                    offset_x_calc = (monitor_width - img_width) / 2 + self.image_offset[0]
+                    offset_y_calc = (monitor_height - img_height) / 2 + self.image_offset[1]
+                    
+                    cr.translate(x, y)
+                    cr.scale(self.scale_factor, self.scale_factor)
+                    cr.set_source_surface(preview_surface, offset_x_calc, offset_y_calc)
+                    cr.paint_with_alpha(0.9)
+                    
+                elif self.preview_mode == "tile":
+                    # Tile image across monitor
+                    img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
+                    monitor_width, monitor_height = output.resolution[0], output.resolution[1]
+                    
+                    cr.translate(x, y)
+                    cr.scale(self.scale_factor, self.scale_factor)
+                    
+                    # Create tiled pattern
+                    pattern = cairo.SurfacePattern(preview_surface)
+                    pattern.set_extend(cairo.Extend.REPEAT)
+                    
+                    # Apply image offset
+                    matrix = cairo.Matrix()
+                    matrix.translate(-self.image_offset[0], -self.image_offset[1])
+                    pattern.set_matrix(matrix)
+                    
+                    cr.set_source(pattern)
+                    cr.rectangle(0, 0, monitor_width, monitor_height)
+                    cr.fill()
                 
-                # Position the image so that the correct portion appears on this monitor
-                # We translate to the monitor position, then offset by the negative of where
-                # this monitor appears in the virtual screen
-                cr.translate(x, y)  # Move to monitor position on screen
-                cr.scale(self.scale_factor, self.scale_factor)  # Scale to match monitor scaling
-                
-                # Set the image source with the correct offset
-                # The image represents the full virtual screen, so we need to show
-                # the portion that corresponds to this monitor's position
-                cr.set_source_surface(preview_surface, -monitor_x_in_virtual, -monitor_y_in_virtual)
-                cr.paint_with_alpha(0.9)  # Slightly transparent to show selection
-                
+                # Restore the Cairo state to undo all transformations
                 cr.restore()
             
             # Always draw border (on top of everything)
@@ -230,26 +324,51 @@ class MonitorWidget(Gtk.DrawingArea):
     def on_button_press(self, widget, event):
         """Handle mouse button press"""
         if event.button == 1:  # Left click
-            clicked_output = self.get_output_at_position(event.x, event.y)
-            if clicked_output:
-                self.selected_output = clicked_output
-                self.dragging = True
+            if event.state & Gdk.ModifierType.CONTROL_MASK:
+                # Ctrl+Click to drag image
+                self.dragging_image = True
                 self.drag_start = (event.x, event.y)
-                self.queue_draw()
-                # Emit signal for output selection
-                self.emit('output-selected', clicked_output)
                 return True
+            else:
+                # Normal click to select monitor
+                clicked_output = self.get_output_at_position(event.x, event.y)
+                if clicked_output:
+                    self.selected_output = clicked_output
+                    self.dragging = True
+                    self.drag_start = (event.x, event.y)
+                    self.queue_draw()
+                    # Emit signal for output selection
+                    self.emit('output-selected', clicked_output)
+                    return True
         return False
     
     def on_button_release(self, widget, event):
         """Handle mouse button release"""
         if event.button == 1:
             self.dragging = False
+            self.dragging_image = False
         return False
     
     def on_motion(self, widget, event):
         """Handle mouse motion"""
-        if self.dragging and self.selected_output:
+        if self.dragging_image:
+            # Drag image to reposition
+            dx = event.x - self.drag_start[0]
+            dy = event.y - self.drag_start[1]
+            
+            # Convert screen movement to image offset
+            offset_scale = 1.0 / self.scale_factor
+            self.image_offset = (
+                self.image_offset[0] + dx * offset_scale,
+                self.image_offset[1] + dy * offset_scale
+            )
+            
+            self.drag_start = (event.x, event.y)
+            self.queue_draw()
+            return True
+            
+        elif self.dragging and self.selected_output:
+            # Drag monitor to reposition
             dx = (event.x - self.drag_start[0]) / self.scale_factor
             dy = (event.y - self.drag_start[1]) / self.scale_factor
             
@@ -269,6 +388,29 @@ class MonitorWidget(Gtk.DrawingArea):
             # Emit signal for position change
             self.emit('output-changed', self.selected_output)
             
+            return True
+        return False
+    
+    def on_key_press(self, widget, event):
+        """Handle keyboard events"""
+        if event.keyval == Gdk.KEY_r and event.state & Gdk.ModifierType.CONTROL_MASK:
+            # Ctrl+R to reset image position
+            self.reset_image_position()
+            return True
+        elif event.keyval in [Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Left, Gdk.KEY_Right]:
+            # Arrow keys to fine-tune image position
+            step = 10 if event.state & Gdk.ModifierType.SHIFT_MASK else 1
+            
+            if event.keyval == Gdk.KEY_Up:
+                self.image_offset = (self.image_offset[0], self.image_offset[1] - step)
+            elif event.keyval == Gdk.KEY_Down:
+                self.image_offset = (self.image_offset[0], self.image_offset[1] + step)
+            elif event.keyval == Gdk.KEY_Left:
+                self.image_offset = (self.image_offset[0] - step, self.image_offset[1])
+            elif event.keyval == Gdk.KEY_Right:
+                self.image_offset = (self.image_offset[0] + step, self.image_offset[1])
+            
+            self.queue_draw()
             return True
         return False
     
@@ -297,6 +439,16 @@ class MonitorWidget(Gtk.DrawingArea):
                 return output
         
         return None
+    
+    def set_preview_mode(self, mode: str):
+        """Set the background mode for preview"""
+        self.preview_mode = mode.lower()
+        self.queue_draw()
+    
+    def reset_image_position(self):
+        """Reset image position to center"""
+        self.image_offset = (0, 0)
+        self.queue_draw()
 
 
 class SwayBGPlusGUI:
@@ -376,11 +528,25 @@ class SwayBGPlusGUI:
         self.save_btn.get_style_context().add_class("suggested-action")
         header_box.pack_start(self.save_btn, False, False, 0)
         
+        # Image repositioning controls
+        reset_btn = Gtk.Button.new_with_label("🔄 Reset Position")
+        reset_btn.connect('clicked', self.on_reset_image_position)
+        reset_btn.set_tooltip_text("Reset image position to center (Ctrl+R)")
+        header_box.pack_start(reset_btn, False, False, 0)
+        
         # Current image label
         self.image_label = Gtk.Label()
         self.image_label.set_text("No image selected")
         self.image_label.set_halign(Gtk.Align.END)
         header_box.pack_end(self.image_label, True, True, 0)
+        
+        # Instructions label
+        instructions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        instructions = Gtk.Label()
+        instructions.set_markup("<small><i>💡 Ctrl+Click to drag image • Arrow keys to fine-tune • Shift+Arrow for larger steps</i></small>")
+        instructions.set_halign(Gtk.Align.CENTER)
+        instructions_box.pack_start(instructions, True, True, 0)
+        content_box.pack_start(instructions_box, False, False, 0)
         
         # Main content area - horizontal paned
         main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
@@ -416,8 +582,8 @@ class SwayBGPlusGUI:
         right_paned.pack2(preview_frame, True, False)
         
         preview_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        preview_box.set_margin_left(12)
-        preview_box.set_margin_right(12)
+        preview_box.set_margin_start(12)
+        preview_box.set_margin_end(12)
         preview_box.set_margin_top(12)
         preview_box.set_margin_bottom(12)
         preview_frame.add(preview_box)
@@ -791,11 +957,18 @@ class SwayBGPlusGUI:
         """Handle refresh outputs button"""
         self.refresh_outputs()
     
+    def on_reset_image_position(self, button):
+        """Handle reset image position button"""
+        self.monitor_widget.reset_image_position()
+        self.update_status("Image position reset to center")
+    
     def on_mode_changed(self, combo):
         """Handle mode selection change"""
         active_text = combo.get_active_text()
         if active_text:
             self.current_mode = active_text.lower()
+            # Update preview mode
+            self.monitor_widget.set_preview_mode(self.current_mode)
             self.update_status(f"Mode changed to: {active_text}")
     
     def on_load_image(self, button):
@@ -827,6 +1000,9 @@ class SwayBGPlusGUI:
             self.save_btn.set_sensitive(True)
             self.image_label.set_text(f"Image: {os.path.basename(self.current_image_path)}")
             self.update_status(f"Loaded image: {self.current_image_path}")
+            
+            # Reset image position when loading new image
+            self.monitor_widget.reset_image_position()
         
         dialog.destroy()
     

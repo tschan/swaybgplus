@@ -78,6 +78,10 @@ python3 swaybgplus_cli.py --list-outputs
 python3 swaybgplus_cli.py --cleanup
 ```
 
+## Todo:
+ - [ ] add screen rotation
+ - [ ] add dynamic background changing
+
 ## 🎛️ Interface Overview
 
 ### Main Window Layout

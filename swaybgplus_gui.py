@@ -14,6 +14,7 @@ import threading
 from typing import List, Optional
 from PIL import Image
 import cairo
+import subprocess
 
 from sway_config_parser import SwayConfigParser, OutputConfig
 from background_manager import BackgroundManager
@@ -38,6 +39,7 @@ class MonitorWidget(Gtk.DrawingArea):
         self.preview_image = None  # Preview image to show on monitors
         self.preview_mode = "stretched"  # Background mode for preview
         self.image_offset = (0, 0)  # Image offset for repositioning
+        self.image_scale = 1.0  # Image scale factor for manual scaling
         
         self.set_size_request(800, 600)
         self.set_can_focus(True)
@@ -48,12 +50,14 @@ class MonitorWidget(Gtk.DrawingArea):
         self.connect('button-release-event', self.on_button_release)
         self.connect('motion-notify-event', self.on_motion)
         self.connect('key-press-event', self.on_key_press)
+        self.connect('scroll-event', self.on_scroll)  # Add scroll event for scaling
         
         # Enable mouse and keyboard events
         self.set_events(Gdk.EventMask.BUTTON_PRESS_MASK | 
                        Gdk.EventMask.BUTTON_RELEASE_MASK |
                        Gdk.EventMask.POINTER_MOTION_MASK |
-                       Gdk.EventMask.KEY_PRESS_MASK)
+                       Gdk.EventMask.KEY_PRESS_MASK |
+                       Gdk.EventMask.SCROLL_MASK)  # Add scroll mask
         
         self.update_scale()
     
@@ -205,7 +209,7 @@ class MonitorWidget(Gtk.DrawingArea):
                     
                     scale_x = monitor_width / img_width
                     scale_y = monitor_height / img_height
-                    scale = max(scale_x, scale_y)  # Fill entire monitor
+                    scale = max(scale_x, scale_y) * self.image_scale  # Apply manual scale
                     
                     scaled_width = img_width * scale
                     scaled_height = img_height * scale
@@ -227,7 +231,7 @@ class MonitorWidget(Gtk.DrawingArea):
                     
                     scale_x = monitor_width / img_width
                     scale_y = monitor_height / img_height
-                    scale = min(scale_x, scale_y)  # Fit entire image
+                    scale = min(scale_x, scale_y) * self.image_scale  # Apply manual scale
                     
                     scaled_width = img_width * scale
                     scaled_height = img_height * scale
@@ -243,37 +247,43 @@ class MonitorWidget(Gtk.DrawingArea):
                     cr.paint_with_alpha(0.9)
                     
                 elif self.preview_mode == "center":
-                    # Center image without scaling
+                    # Center image with manual scaling
                     img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
                     monitor_width, monitor_height = output.resolution[0], output.resolution[1]
                     
-                    offset_x_calc = (monitor_width - img_width) / 2 + self.image_offset[0]
-                    offset_y_calc = (monitor_height - img_height) / 2 + self.image_offset[1]
+                    # Apply manual scaling
+                    scaled_width = img_width * self.image_scale
+                    scaled_height = img_height * self.image_scale
+                    
+                    offset_x_calc = (monitor_width - scaled_width) / 2 + self.image_offset[0]
+                    offset_y_calc = (monitor_height - scaled_height) / 2 + self.image_offset[1]
                     
                     cr.translate(x, y)
                     cr.scale(self.scale_factor, self.scale_factor)
-                    cr.set_source_surface(preview_surface, offset_x_calc, offset_y_calc)
+                    cr.scale(self.image_scale, self.image_scale)
+                    cr.set_source_surface(preview_surface, offset_x_calc / self.image_scale, offset_y_calc / self.image_scale)
                     cr.paint_with_alpha(0.9)
                     
                 elif self.preview_mode == "tile":
-                    # Tile image across monitor
+                    # Tile image across monitor with manual scaling
                     img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
                     monitor_width, monitor_height = output.resolution[0], output.resolution[1]
                     
                     cr.translate(x, y)
                     cr.scale(self.scale_factor, self.scale_factor)
+                    cr.scale(self.image_scale, self.image_scale)  # Apply manual scale to tiles
                     
                     # Create tiled pattern
                     pattern = cairo.SurfacePattern(preview_surface)
                     pattern.set_extend(cairo.Extend.REPEAT)
                     
-                    # Apply image offset
+                    # Apply image offset (scaled for the tile scaling)
                     matrix = cairo.Matrix()
-                    matrix.translate(-self.image_offset[0], -self.image_offset[1])
+                    matrix.translate(-self.image_offset[0] / self.image_scale, -self.image_offset[1] / self.image_scale)
                     pattern.set_matrix(matrix)
                     
                     cr.set_source(pattern)
-                    cr.rectangle(0, 0, monitor_width, monitor_height)
+                    cr.rectangle(0, 0, monitor_width / self.image_scale, monitor_height / self.image_scale)
                     cr.fill()
                 
                 # Restore the Cairo state to undo all transformations
@@ -394,7 +404,7 @@ class MonitorWidget(Gtk.DrawingArea):
     def on_key_press(self, widget, event):
         """Handle keyboard events"""
         if event.keyval == Gdk.KEY_r and event.state & Gdk.ModifierType.CONTROL_MASK:
-            # Ctrl+R to reset image position
+            # Ctrl+R to reset image position and scale
             self.reset_image_position()
             return True
         elif event.keyval in [Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Left, Gdk.KEY_Right]:
@@ -412,7 +422,31 @@ class MonitorWidget(Gtk.DrawingArea):
             
             self.queue_draw()
             return True
+        elif event.keyval in [Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add]:
+            # Plus key to scale up
+            self.image_scale *= 1.1
+            self.image_scale = min(5.0, self.image_scale)
+            self.queue_draw()
+            return True
+        elif event.keyval in [Gdk.KEY_minus, Gdk.KEY_underscore, Gdk.KEY_KP_Subtract]:
+            # Minus key to scale down
+            self.image_scale /= 1.1
+            self.image_scale = max(0.1, self.image_scale)
+            self.queue_draw()
+            return True
         return False
+    
+    def on_scroll(self, widget, event):
+        """Handle scroll events for manual scaling"""
+        if event.direction == Gdk.ScrollDirection.UP:
+            self.image_scale *= 1.1
+        elif event.direction == Gdk.ScrollDirection.DOWN:
+            self.image_scale /= 1.1
+        
+        # Clamp scale between reasonable limits
+        self.image_scale = max(0.1, min(5.0, self.image_scale))
+        self.queue_draw()
+        return True
     
     def get_output_at_position(self, x, y) -> Optional[OutputConfig]:
         """Get output at the given screen position"""
@@ -446,8 +480,9 @@ class MonitorWidget(Gtk.DrawingArea):
         self.queue_draw()
     
     def reset_image_position(self):
-        """Reset image position to center"""
+        """Reset image position and scale to defaults"""
         self.image_offset = (0, 0)
+        self.image_scale = 1.0
         self.queue_draw()
 
 
@@ -461,9 +496,12 @@ class SwayBGPlusGUI:
         self.current_image_path: Optional[str] = None
         self.current_mode: str = "stretched"  # Current background mode
         self.selected_output: Optional[OutputConfig] = None
+        self.config_changed: bool = False  # Track if config has unsaved changes
+        self.background_applied: bool = False  # Track if background has been applied
         
         self.build_ui()
         self.refresh_outputs()
+        self.detect_current_background()  # Try to detect existing background
     
     def build_ui(self):
         """Build the user interface"""
@@ -471,8 +509,7 @@ class SwayBGPlusGUI:
         self.window = Gtk.Window()
         self.window.set_title("SwayBG+ - Multi-Monitor Background Manager")
         self.window.set_default_size(1400, 900)
-        self.window.connect('destroy', self.on_quit)
-        self.window.connect('delete-event', self.on_quit)  # Handle X button
+        self.window.connect('delete-event', self.on_quit)  # Handle X button and window close
         
         # Create menu bar
         self.create_menu_bar()
@@ -531,7 +568,7 @@ class SwayBGPlusGUI:
         # Image repositioning controls
         reset_btn = Gtk.Button.new_with_label("🔄 Reset Position")
         reset_btn.connect('clicked', self.on_reset_image_position)
-        reset_btn.set_tooltip_text("Reset image position to center (Ctrl+R)")
+        reset_btn.set_tooltip_text("Reset image position and scale (Ctrl+R)")
         header_box.pack_start(reset_btn, False, False, 0)
         
         # Current image label
@@ -543,7 +580,7 @@ class SwayBGPlusGUI:
         # Instructions label
         instructions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         instructions = Gtk.Label()
-        instructions.set_markup("<small><i>💡 Ctrl+Click to drag image • Arrow keys to fine-tune • Shift+Arrow for larger steps</i></small>")
+        instructions.set_markup("<small><i>💡 Ctrl+Click to drag image • Arrow keys to move • +/- or scroll to scale • Ctrl+R to reset</i></small>")
         instructions.set_halign(Gtk.Align.CENTER)
         instructions_box.pack_start(instructions, True, True, 0)
         content_box.pack_start(instructions_box, False, False, 0)
@@ -801,6 +838,7 @@ class SwayBGPlusGUI:
         """Handle output change from monitor widget"""
         self.selected_output = output
         self.refresh_output_list()
+        self.mark_config_changed()  # Mark as changed when output is modified
     
     def refresh_output_list(self):
         """Refresh the output list display"""
@@ -837,6 +875,7 @@ class SwayBGPlusGUI:
                 self.monitor_widget.update_scale()
                 self.monitor_widget.queue_draw()
                 self.update_status(f"Updated {output.name} resolution to {new_text}")
+                self.mark_config_changed()
             except ValueError:
                 self.show_error(f"Invalid resolution format: {new_text}. Use format like '1920x1080'")
     
@@ -856,6 +895,7 @@ class SwayBGPlusGUI:
                 self.output_store[tree_iter][2] = f"{x}, {y}"
                 self.monitor_widget.queue_draw()
                 self.update_status(f"Updated {output.name} position to ({x}, {y})")
+                self.mark_config_changed()
             else:
                 raise ValueError("Need exactly 2 values")
         except ValueError:
@@ -872,6 +912,7 @@ class SwayBGPlusGUI:
                 output.scale = scale
                 self.output_store[tree_iter][3] = f"{scale:.1f}"
                 self.update_status(f"Updated {output.name} scale to {scale:.1f}")
+                self.mark_config_changed()
             else:
                 raise ValueError("Scale must be between 0.1 and 5.0")
         except ValueError as e:
@@ -888,6 +929,7 @@ class SwayBGPlusGUI:
         
         status = "enabled" if output.enabled else "disabled"
         self.update_status(f"{output.name} {status}")
+        self.mark_config_changed()
     
     def on_select_config(self, widget):
         """Handle select config file"""
@@ -925,6 +967,7 @@ class SwayBGPlusGUI:
         try:
             success = self.parser.save_config_file(backup=True)
             if success:
+                self.mark_config_saved()  # Mark as saved
                 self.show_info("Monitor Configuration Saved", 
                              "Monitor configuration has been saved to the sway config file.\n"
                              "A backup was created with .backup extension.")
@@ -960,7 +1003,7 @@ class SwayBGPlusGUI:
     def on_reset_image_position(self, button):
         """Handle reset image position button"""
         self.monitor_widget.reset_image_position()
-        self.update_status("Image position reset to center")
+        self.update_status("Image position and scale reset to defaults")
     
     def on_mode_changed(self, combo):
         """Handle mode selection change"""
@@ -1070,6 +1113,7 @@ class SwayBGPlusGUI:
         self.save_btn.set_sensitive(True)
         
         if success:
+            self.background_applied = True  # Mark background as applied
             self.update_status(f"Background applied successfully ({mode} mode)")
             # Show success notification
             self.show_info("Background Applied Successfully!", 
@@ -1107,17 +1151,17 @@ class SwayBGPlusGUI:
     
     def on_quit(self, widget, event=None):
         """Handle quit event"""
-        # Ask user if they want to save changes before quitting
-        if self.outputs and self.parser.get_config_path():
+        # Only ask about saving if there are unsaved config changes
+        if self.config_changed and self.outputs and self.parser.get_config_path():
             dialog = Gtk.MessageDialog(
                 transient_for=self.window,
                 flags=0,
                 message_type=Gtk.MessageType.QUESTION,
                 buttons=Gtk.ButtonsType.YES_NO,
-                text="Save Changes?"
+                text="Save Configuration Changes?"
             )
             dialog.format_secondary_text(
-                "Do you want to save your monitor configuration changes to the sway config file?\n\n"
+                "You have unsaved monitor configuration changes.\n\n"
                 "• Yes: Save changes and quit\n"
                 "• No: Quit without saving"
             )
@@ -1137,7 +1181,69 @@ class SwayBGPlusGUI:
         
         self.background_manager.cleanup()
         Gtk.main_quit()
-        return False  # Allow window to close
+        
+        # Return False to allow window to close normally
+        return False
+    
+    def detect_current_background(self):
+        """Try to detect current background image from running swaybg processes"""
+        try:
+            # Check for running swaybg processes
+            result = subprocess.run(['pgrep', '-f', 'swaybg'], capture_output=True, text=True)
+            if result.returncode == 0:
+                # Get command line of swaybg processes
+                pids = result.stdout.strip().split('\n')
+                for pid in pids:
+                    if pid:
+                        try:
+                            with open(f'/proc/{pid}/cmdline', 'r') as f:
+                                cmdline = f.read().replace('\0', ' ')
+                                # Look for image file in command line
+                                parts = cmdline.split()
+                                for i, part in enumerate(parts):
+                                    if part in ['-i', '--image'] and i + 1 < len(parts):
+                                        image_path = parts[i + 1]
+                                        # Skip temporary files, look for original images
+                                        if not image_path.startswith('/tmp/tmp'):
+                                            if os.path.exists(image_path):
+                                                self.current_image_path = image_path
+                                                self.load_image_preview()
+                                                self.save_btn.set_sensitive(True)
+                                                self.image_label.set_text(f"Image: {os.path.basename(image_path)}")
+                                                self.update_status(f"Detected current background: {image_path}")
+                                                return
+                        except (OSError, IOError):
+                            continue
+            
+            # If no background detected, check for common background locations
+            common_bg_paths = [
+                os.path.expanduser("~/.config/sway/wallpaper.jpg"),
+                os.path.expanduser("~/.config/sway/wallpaper.png"),
+                os.path.expanduser("~/Pictures/wallpaper.jpg"),
+                os.path.expanduser("~/Pictures/wallpaper.png"),
+                os.path.expanduser("~/wallpaper.jpg"),
+                os.path.expanduser("~/wallpaper.png"),
+            ]
+            
+            for path in common_bg_paths:
+                if os.path.exists(path):
+                    self.current_image_path = path
+                    self.load_image_preview()
+                    self.save_btn.set_sensitive(True)
+                    self.image_label.set_text(f"Image: {os.path.basename(path)}")
+                    self.update_status(f"Found background image: {path}")
+                    return
+                    
+        except Exception as e:
+            print(f"Error detecting current background: {e}")
+    
+    def mark_config_changed(self):
+        """Mark configuration as changed"""
+        self.config_changed = True
+    
+    def mark_config_saved(self):
+        """Mark configuration as saved"""
+        self.config_changed = False
     
     def run(self):
         """Run the application"""

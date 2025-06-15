@@ -292,6 +292,7 @@ class SwayBGPlusGUI:
         self.window.set_title("SwayBG+ - Multi-Monitor Background Manager")
         self.window.set_default_size(1400, 900)
         self.window.connect('destroy', self.on_quit)
+        self.window.connect('delete-event', self.on_quit)  # Handle X button
         
         # Create menu bar
         self.create_menu_bar()
@@ -373,19 +374,13 @@ class SwayBGPlusGUI:
         right_paned.set_size_request(500, -1)
         main_paned.pack2(right_paned, False, False)
         
-        # Top right - output information and controls
+        # Top right - output configuration with inline editing
         output_frame = Gtk.Frame()
         output_frame.set_label("Output Configuration")
         right_paned.pack1(output_frame, True, False)
         
-        output_notebook = Gtk.Notebook()
-        output_frame.add(output_notebook)
-        
-        # Output list tab
-        self.create_output_list_tab(output_notebook)
-        
-        # Output editor tab
-        self.create_output_editor_tab(output_notebook)
+        # Create output list with inline editing
+        self.create_output_list(output_frame)
         
         # Bottom right - image preview
         preview_frame = Gtk.Frame()
@@ -465,120 +460,102 @@ class SwayBGPlusGUI:
         show_config_item.connect('activate', self.on_show_config_path)
         view_menu.append(show_config_item)
     
-    def create_output_list_tab(self, notebook):
-        """Create the output list tab"""
+    def create_output_list(self, parent_frame):
+        """Create the output list with inline editing capabilities"""
         list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         list_box.set_margin_left(12)
         list_box.set_margin_right(12)
         list_box.set_margin_top(12)
         list_box.set_margin_bottom(12)
         
-        # Output list
-        self.output_store = Gtk.ListStore(str, str, str, str)  # name, resolution, position, scale
+        # Instructions label
+        instructions = Gtk.Label()
+        instructions.set_markup("<i>Double-click position, resolution, or scale values to edit</i>")
+        instructions.set_halign(Gtk.Align.START)
+        list_box.pack_start(instructions, False, False, 0)
+        
+        # Output list with editable cells
+        # Store: name, resolution, position, scale, enabled, output_object
+        self.output_store = Gtk.ListStore(str, str, str, str, bool, object)
         self.output_tree = Gtk.TreeView(model=self.output_store)
+        self.output_tree.set_grid_lines(Gtk.TreeViewGridLines.BOTH)
         
-        # Add columns
+        # Name column (read-only)
         renderer = Gtk.CellRendererText()
-        column = Gtk.TreeViewColumn("Name", renderer, text=0)
+        column = Gtk.TreeViewColumn("Output", renderer, text=0)
+        column.set_min_width(100)
+        column.set_resizable(True)
+        self.output_tree.append_column(column)
+        
+        # Resolution column (editable with dropdown)
+        self.resolution_renderer = Gtk.CellRendererCombo()
+        self.resolution_renderer.set_property("editable", True)
+        self.resolution_renderer.set_property("model", Gtk.ListStore(str))
+        self.resolution_renderer.set_property("text-column", 0)
+        self.resolution_renderer.set_property("has-entry", False)
+        self.resolution_renderer.connect("edited", self.on_resolution_edited)
+        
+        column = Gtk.TreeViewColumn("Resolution", self.resolution_renderer, text=1)
+        column.set_min_width(120)
+        column.set_resizable(True)
+        self.output_tree.append_column(column)
+        
+        # Position column (editable)
+        position_renderer = Gtk.CellRendererText()
+        position_renderer.set_property("editable", True)
+        position_renderer.connect("edited", self.on_position_edited)
+        
+        column = Gtk.TreeViewColumn("Position (X,Y)", position_renderer, text=2)
+        column.set_min_width(120)
+        column.set_resizable(True)
+        self.output_tree.append_column(column)
+        
+        # Scale column (editable)
+        scale_renderer = Gtk.CellRendererText()
+        scale_renderer.set_property("editable", True)
+        scale_renderer.connect("edited", self.on_scale_edited)
+        
+        column = Gtk.TreeViewColumn("Scale", scale_renderer, text=3)
+        column.set_min_width(80)
+        column.set_resizable(True)
+        self.output_tree.append_column(column)
+        
+        # Enabled column (checkbox)
+        enabled_renderer = Gtk.CellRendererToggle()
+        enabled_renderer.connect("toggled", self.on_enabled_toggled)
+        
+        column = Gtk.TreeViewColumn("Enabled", enabled_renderer, active=4)
         column.set_min_width(80)
         self.output_tree.append_column(column)
         
-        column = Gtk.TreeViewColumn("Resolution", renderer, text=1)
-        column.set_min_width(80)
-        self.output_tree.append_column(column)
-        
-        column = Gtk.TreeViewColumn("Position", renderer, text=2)
-        column.set_min_width(60)
-        self.output_tree.append_column(column)
-        
-        column = Gtk.TreeViewColumn("Scale", renderer, text=3)
-        column.set_min_width(40)
-        self.output_tree.append_column(column)
+        # Connect selection changed
+        selection = self.output_tree.get_selection()
+        selection.connect("changed", self.on_tree_selection_changed)
         
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolled.set_size_request(-1, 200)
+        scrolled.set_size_request(-1, 300)
         scrolled.add(self.output_tree)
         list_box.pack_start(scrolled, True, True, 0)
         
-        notebook.append_page(list_box, Gtk.Label.new("Output List"))
-    
-    def create_output_editor_tab(self, notebook):
-        """Create the output editor tab"""
-        editor_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        editor_box.set_margin_left(12)
-        editor_box.set_margin_right(12)
-        editor_box.set_margin_top(12)
-        editor_box.set_margin_bottom(12)
+        # Control buttons
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         
-        # Output selection
-        output_select_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        output_select_box.pack_start(Gtk.Label.new("Output:"), False, False, 0)
+        # Apply config button
+        apply_btn = Gtk.Button.new_with_label("⚡ Apply Config")
+        apply_btn.connect('clicked', self.on_apply_config)
+        apply_btn.set_tooltip_text("Apply current configuration to sway immediately")
+        button_box.pack_start(apply_btn, False, False, 0)
         
-        self.output_combo = Gtk.ComboBoxText()
-        self.output_combo.connect('changed', self.on_output_combo_changed)
-        output_select_box.pack_start(self.output_combo, True, True, 0)
-        editor_box.pack_start(output_select_box, False, False, 0)
+        # Save config button
+        save_config_btn = Gtk.Button.new_with_label("💾 Save to Config")
+        save_config_btn.connect('clicked', self.on_save_config)
+        save_config_btn.set_tooltip_text("Save configuration to sway config file")
+        button_box.pack_start(save_config_btn, False, False, 0)
         
-        # Position controls
-        pos_frame = Gtk.Frame.new("Position")
-        pos_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        pos_box.set_margin_left(6)
-        pos_box.set_margin_right(6)
-        pos_box.set_margin_top(6)
-        pos_box.set_margin_bottom(6)
+        list_box.pack_start(button_box, False, False, 0)
         
-        pos_box.pack_start(Gtk.Label.new("X:"), False, False, 0)
-        self.x_spin = Gtk.SpinButton.new_with_range(-9999, 9999, 10)
-        self.x_spin.connect('value-changed', self.on_position_changed)
-        pos_box.pack_start(self.x_spin, True, True, 0)
-        
-        pos_box.pack_start(Gtk.Label.new("Y:"), False, False, 0)
-        self.y_spin = Gtk.SpinButton.new_with_range(-9999, 9999, 10)
-        self.y_spin.connect('value-changed', self.on_position_changed)
-        pos_box.pack_start(self.y_spin, True, True, 0)
-        
-        pos_frame.add(pos_box)
-        editor_box.pack_start(pos_frame, False, False, 0)
-        
-        # Resolution controls
-        res_frame = Gtk.Frame.new("Resolution")
-        res_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        res_box.set_margin_left(6)
-        res_box.set_margin_right(6)
-        res_box.set_margin_top(6)
-        res_box.set_margin_bottom(6)
-        
-        self.resolution_combo = Gtk.ComboBoxText()
-        self.resolution_combo.connect('changed', self.on_resolution_changed)
-        res_box.pack_start(self.resolution_combo, False, False, 0)
-        
-        res_frame.add(res_box)
-        editor_box.pack_start(res_frame, False, False, 0)
-        
-        # Scale controls
-        scale_frame = Gtk.Frame.new("Scale")
-        scale_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        scale_box.set_margin_left(6)
-        scale_box.set_margin_right(6)
-        scale_box.set_margin_top(6)
-        scale_box.set_margin_bottom(6)
-        
-        scale_box.pack_start(Gtk.Label.new("Scale:"), False, False, 0)
-        self.scale_spin = Gtk.SpinButton.new_with_range(0.1, 5.0, 0.1)
-        self.scale_spin.set_digits(1)
-        self.scale_spin.connect('value-changed', self.on_scale_changed)
-        scale_box.pack_start(self.scale_spin, True, True, 0)
-        
-        scale_frame.add(scale_box)
-        editor_box.pack_start(scale_frame, False, False, 0)
-        
-        # Enabled checkbox
-        self.enabled_check = Gtk.CheckButton.new_with_label("Output Enabled")
-        self.enabled_check.connect('toggled', self.on_enabled_changed)
-        editor_box.pack_start(self.enabled_check, False, False, 0)
-        
-        notebook.append_page(editor_box, Gtk.Label.new("Output Editor"))
+        parent_frame.add(list_box)
     
     def refresh_outputs(self):
         """Refresh the list of outputs"""
@@ -596,7 +573,9 @@ class SwayBGPlusGUI:
                 output.name,
                 f"{output.resolution[0]}x{output.resolution[1]}",
                 f"{output.position[0]}, {output.position[1]}",
-                f"{output.scale:.1f}"
+                f"{output.scale:.1f}",
+                output.enabled,
+                output
             ])
         
         # Update output combo
@@ -616,57 +595,6 @@ class SwayBGPlusGUI:
         else:
             self.update_status(f"Found {len(self.outputs)} outputs | No config file found")
     
-    def update_output_editor(self, output: OutputConfig):
-        """Update the output editor with the selected output's values"""
-        if not output:
-            return
-        
-        self.selected_output = output
-        
-        # Block signals to prevent recursion
-        self.x_spin.handler_block_by_func(self.on_position_changed)
-        self.y_spin.handler_block_by_func(self.on_position_changed)
-        self.scale_spin.handler_block_by_func(self.on_scale_changed)
-        self.resolution_combo.handler_block_by_func(self.on_resolution_changed)
-        self.enabled_check.handler_block_by_func(self.on_enabled_changed)
-        
-        # Update position
-        self.x_spin.set_value(output.position[0])
-        self.y_spin.set_value(output.position[1])
-        
-        # Update scale
-        self.scale_spin.set_value(output.scale)
-        
-        # Update enabled
-        self.enabled_check.set_active(output.enabled)
-        
-        # Update resolution combo
-        self.resolution_combo.remove_all()
-        current_res = f"{output.resolution[0]}x{output.resolution[1]}"
-        
-        if output.available_modes:
-            # Add available resolutions
-            for width, height in output.available_modes:
-                res_text = f"{width}x{height}"
-                self.resolution_combo.append_text(res_text)
-        else:
-            # Add current resolution if no modes available
-            self.resolution_combo.append_text(current_res)
-        
-        # Set current resolution as active
-        for i in range(self.resolution_combo.get_model().iter_n_children(None)):
-            if self.resolution_combo.get_model().get_value(
-                self.resolution_combo.get_model().get_iter_from_string(str(i)), 0) == current_res:
-                self.resolution_combo.set_active(i)
-                break
-        
-        # Unblock signals
-        self.x_spin.handler_unblock_by_func(self.on_position_changed)
-        self.y_spin.handler_unblock_by_func(self.on_position_changed)
-        self.scale_spin.handler_unblock_by_func(self.on_scale_changed)
-        self.resolution_combo.handler_unblock_by_func(self.on_resolution_changed)
-        self.enabled_check.handler_unblock_by_func(self.on_enabled_changed)
-    
     def update_status(self, message: str):
         """Update status bar"""
         context_id = self.status_bar.get_context_id("main")
@@ -674,62 +602,19 @@ class SwayBGPlusGUI:
     
     def on_output_selected(self, widget, output):
         """Handle output selection from monitor widget"""
-        self.update_output_editor(output)
+        self.selected_output = output
         
-        # Find and select in combo
-        for i in range(self.output_combo.get_model().iter_n_children(None)):
-            if self.output_combo.get_model().get_value(
-                self.output_combo.get_model().get_iter_from_string(str(i)), 0) == output.name:
-                self.output_combo.set_active(i)
+        # Find and select in tree view
+        for i, row in enumerate(self.output_store):
+            if row[5] == output:  # Compare output objects
+                selection = self.output_tree.get_selection()
+                selection.select_iter(self.output_store.get_iter(i))
                 break
     
     def on_output_changed(self, widget, output):
         """Handle output change from monitor widget"""
-        self.update_output_editor(output)
+        self.selected_output = output
         self.refresh_output_list()
-    
-    def on_output_combo_changed(self, combo):
-        """Handle output combo selection"""
-        active_text = combo.get_active_text()
-        if active_text:
-            for output in self.outputs:
-                if output.name == active_text:
-                    self.update_output_editor(output)
-                    self.monitor_widget.selected_output = output
-                    self.monitor_widget.queue_draw()
-                    break
-    
-    def on_position_changed(self, spin):
-        """Handle position change"""
-        if self.selected_output:
-            new_x = int(self.x_spin.get_value())
-            new_y = int(self.y_spin.get_value())
-            self.selected_output.position = (new_x, new_y)
-            self.monitor_widget.queue_draw()
-            self.refresh_output_list()
-    
-    def on_resolution_changed(self, combo):
-        """Handle resolution change"""
-        if self.selected_output:
-            active_text = combo.get_active_text()
-            if active_text and 'x' in active_text:
-                width, height = map(int, active_text.split('x'))
-                self.selected_output.resolution = (width, height)
-                self.monitor_widget.update_scale()
-                self.monitor_widget.queue_draw()
-                self.refresh_output_list()
-    
-    def on_scale_changed(self, spin):
-        """Handle scale change"""
-        if self.selected_output:
-            self.selected_output.scale = self.scale_spin.get_value()
-            self.refresh_output_list()
-    
-    def on_enabled_changed(self, check):
-        """Handle enabled checkbox change"""
-        if self.selected_output:
-            self.selected_output.enabled = check.get_active()
-            self.refresh_output_list()
     
     def refresh_output_list(self):
         """Refresh the output list display"""
@@ -739,8 +624,84 @@ class SwayBGPlusGUI:
                 output.name,
                 f"{output.resolution[0]}x{output.resolution[1]}",
                 f"{output.position[0]}, {output.position[1]}",
-                f"{output.scale:.1f}"
+                f"{output.scale:.1f}",
+                output.enabled,
+                output
             ])
+    
+    def on_tree_selection_changed(self, selection):
+        """Handle tree selection change"""
+        model, tree_iter = selection.get_selected()
+        if tree_iter:
+            output = model[tree_iter][5]  # Get output object from column 5
+            self.selected_output = output
+            self.monitor_widget.selected_output = output
+            self.monitor_widget.queue_draw()
+    
+    def on_resolution_edited(self, renderer, path, new_text):
+        """Handle resolution cell editing"""
+        tree_iter = self.output_store.get_iter(path)
+        output = self.output_store[tree_iter][5]  # Get output object
+        
+        if 'x' in new_text:
+            try:
+                width, height = map(int, new_text.split('x'))
+                output.resolution = (width, height)
+                self.output_store[tree_iter][1] = new_text
+                self.monitor_widget.update_scale()
+                self.monitor_widget.queue_draw()
+                self.update_status(f"Updated {output.name} resolution to {new_text}")
+            except ValueError:
+                self.show_error(f"Invalid resolution format: {new_text}. Use format like '1920x1080'")
+    
+    def on_position_edited(self, renderer, path, new_text):
+        """Handle position cell editing"""
+        tree_iter = self.output_store.get_iter(path)
+        output = self.output_store[tree_iter][5]  # Get output object
+        
+        # Parse position - accept formats like "0,0" or "0, 0" or "0 0"
+        try:
+            # Replace common separators with comma and split
+            clean_text = new_text.replace(' ', ',').replace(',', ' ').strip()
+            parts = clean_text.split()
+            if len(parts) == 2:
+                x, y = map(int, parts)
+                output.position = (x, y)
+                self.output_store[tree_iter][2] = f"{x}, {y}"
+                self.monitor_widget.queue_draw()
+                self.update_status(f"Updated {output.name} position to ({x}, {y})")
+            else:
+                raise ValueError("Need exactly 2 values")
+        except ValueError:
+            self.show_error(f"Invalid position format: {new_text}. Use format like '0, 0' or '1920 0'")
+    
+    def on_scale_edited(self, renderer, path, new_text):
+        """Handle scale cell editing"""
+        tree_iter = self.output_store.get_iter(path)
+        output = self.output_store[tree_iter][5]  # Get output object
+        
+        try:
+            scale = float(new_text)
+            if 0.1 <= scale <= 5.0:
+                output.scale = scale
+                self.output_store[tree_iter][3] = f"{scale:.1f}"
+                self.update_status(f"Updated {output.name} scale to {scale:.1f}")
+            else:
+                raise ValueError("Scale must be between 0.1 and 5.0")
+        except ValueError as e:
+            self.show_error(f"Invalid scale value: {new_text}. {str(e)}")
+    
+    def on_enabled_toggled(self, renderer, path):
+        """Handle enabled checkbox toggle"""
+        tree_iter = self.output_store.get_iter(path)
+        output = self.output_store[tree_iter][5]  # Get output object
+        
+        # Toggle enabled state
+        output.enabled = not output.enabled
+        self.output_store[tree_iter][4] = output.enabled
+        
+        status = "enabled" if output.enabled else "disabled"
+        self.update_status(f"{output.name} {status}")
     
     def on_select_config(self, widget):
         """Handle select config file"""
@@ -948,10 +909,11 @@ class SwayBGPlusGUI:
         dialog.run()
         dialog.destroy()
     
-    def on_quit(self, widget):
+    def on_quit(self, widget, event=None):
         """Handle quit event"""
         self.background_manager.cleanup()
         Gtk.main_quit()
+        return False  # Allow window to close
     
     def run(self):
         """Run the application"""

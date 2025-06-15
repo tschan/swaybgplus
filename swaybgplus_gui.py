@@ -23,8 +23,8 @@ class MonitorWidget(Gtk.DrawingArea):
     """Widget to display and arrange monitors"""
     
     __gsignals__ = {
-        'output-selected': (GObject.SIGNAL_RUN_FIRST, None, (object,)),
-        'output-changed': (GObject.SIGNAL_RUN_FIRST, None, (object,))
+        'output-selected': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
+        'output-changed': (GObject.SignalFlags.RUN_FIRST, None, (object,))
     }
     
     def __init__(self, outputs: List[OutputConfig]):
@@ -111,18 +111,31 @@ class MonitorWidget(Gtk.DrawingArea):
         # Prepare preview image if available
         preview_surface = None
         if self.preview_image:
-            # Create a stretched version of the preview across all monitors
-            total_width = max(output.position[0] + output.resolution[0] for output in self.outputs) - min_x
-            total_height = max(output.position[1] + output.resolution[1] for output in self.outputs) - min_y
-            
-            # Resize preview image to virtual screen size
-            preview_resized = self.preview_image.resize((total_width, total_height), Image.Resampling.LANCZOS)
-            
-            # Convert to Cairo surface
-            preview_data = preview_resized.tobytes('raw', 'RGB')
-            preview_surface = cairo.ImageSurface.create_for_data(
-                preview_data, cairo.FORMAT_RGB24, total_width, total_height
-            )
+            try:
+                # Create a stretched version of the preview across all monitors
+                total_width = max(output.position[0] + output.resolution[0] for output in self.outputs) - min_x
+                total_height = max(output.position[1] + output.resolution[1] for output in self.outputs) - min_y
+                
+                # Resize preview image to virtual screen size
+                preview_resized = self.preview_image.resize((total_width, total_height), Image.Resampling.LANCZOS)
+                
+                # Convert to RGBA format for Cairo
+                if preview_resized.mode != 'RGBA':
+                    preview_resized = preview_resized.convert('RGBA')
+                
+                # Create Cairo surface from image data
+                width, height = preview_resized.size
+                stride = cairo.ImageSurface.format_stride_for_width(cairo.FORMAT_ARGB32, width)
+                
+                # Convert PIL image to Cairo-compatible format (BGRA)
+                img_data = bytearray(preview_resized.tobytes('raw', 'BGRa'))
+                
+                preview_surface = cairo.ImageSurface.create_for_data(
+                    img_data, cairo.FORMAT_ARGB32, width, height, stride
+                )
+            except Exception as e:
+                print(f"Error creating preview surface: {e}")
+                preview_surface = None
         
         # Draw each monitor
         for output in self.outputs:
@@ -306,8 +319,8 @@ class SwayBGPlusGUI:
         
         # Content area
         content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        content_box.set_margin_left(12)
-        content_box.set_margin_right(12)
+        content_box.set_margin_start(12)
+        content_box.set_margin_end(12)
         content_box.set_margin_top(12)
         content_box.set_margin_bottom(12)
         main_box.pack_start(content_box, True, True, 0)
@@ -577,14 +590,6 @@ class SwayBGPlusGUI:
                 output.enabled,
                 output
             ])
-        
-        # Update output combo
-        self.output_combo.remove_all()
-        for output in self.outputs:
-            self.output_combo.append_text(output.name)
-        
-        if self.outputs:
-            self.output_combo.set_active(0)
         
         self.update_status(f"Found {len(self.outputs)} outputs")
         
@@ -911,6 +916,34 @@ class SwayBGPlusGUI:
     
     def on_quit(self, widget, event=None):
         """Handle quit event"""
+        # Ask user if they want to save changes before quitting
+        if self.outputs and self.parser.get_config_path():
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window,
+                flags=0,
+                message_type=Gtk.MessageType.QUESTION,
+                buttons=Gtk.ButtonsType.YES_NO,
+                text="Save Changes?"
+            )
+            dialog.format_secondary_text(
+                "Do you want to save your monitor configuration changes to the sway config file?\n\n"
+                "• Yes: Save changes and quit\n"
+                "• No: Quit without saving"
+            )
+            
+            response = dialog.run()
+            dialog.destroy()
+            
+            if response == Gtk.ResponseType.YES:
+                try:
+                    success = self.parser.save_config_file(backup=True)
+                    if success:
+                        print("Configuration saved successfully")
+                    else:
+                        print("Failed to save configuration")
+                except Exception as e:
+                    print(f"Error saving configuration: {e}")
+        
         self.background_manager.cleanup()
         Gtk.main_quit()
         return False  # Allow window to close

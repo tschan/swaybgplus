@@ -56,8 +56,8 @@ python3 swaybgplus_gui.py
 1. **Load Image** → Click "📁 Load Image" to select your background
 2. **Position & Scale** → Drag image to move, drag corners to resize
 3. **Choose Mode** → Select background mode (Stretched, Fill, Fit, Center, Tile)
-4. **Apply Background** → Click "🎨 Apply Background" to apply and save
-5. **Save Layout** → Click "💾 Save" to save monitor configuration
+4. **Save Configuration** → Click "💾 Save" to save monitor configuration
+5. **Reset if Needed** → Click "🔄 Reset" to reset image position and scale
 
 ### CLI Usage
 
@@ -85,7 +85,7 @@ python3 swaybgplus_cli.py --cleanup
 ```
 [File] [View]                                                    [✕]
 ────────────────────────────────────────────────────────────────────
-[🔄 Refresh] [📁 Load Image] [Mode: Stretched ▼] [🎨 Apply Background] [🔄 Reset]
+💡 Drag image to move • Drag corners to resize • Ctrl+R to reset
 
 ┌─────────────────────────────────┬─────────────────────────────────┐
 │ Monitor Layout & Preview        │ Output Configuration            │
@@ -94,23 +94,24 @@ python3 swaybgplus_cli.py --cleanup
 │  │ DP-1│    │DP-2 │            │ │ DP-1   │ 2560x1440  │ 0,0    │ │
 │  │     │    │     │            │ │ DP-2   │ 2560x1440  │ 2560,0 │ │
 │  └─────┘    └─────┘            │ └─────────────────────────────┘ │
-│                                 │                                 │
-│  [Background Preview Here]      │ Image Preview                   │
+│                                 │                    [🔄 Refresh] │
+│  [Background Preview Here]      │                                 │
+│                                 │ Image Preview                   │
+│                                 │ Image: filename.jpg             │
+│                                 │ Size: 1920×1080                 │
 │                                 │ ┌─────────────────────────────┐ │
-│                                 │ │                             │ │
 │                                 │ │    [Image Thumbnail]        │ │
-│                                 │ │                             │ │
 │                                 │ └─────────────────────────────┘ │
+│                                 │        [Mode ▼] [📁 Load Image] │
 └─────────────────────────────────┴─────────────────────────────────┘
 
-Status: Ready...                                              [💾 Save]
+Status: Ready...                                    [🔄 Reset] [💾 Save]
 ```
 
 ### Menu Structure
 
 **File Menu:**
 - Select Sway Config... *(choose config file)*
-- Save to Config *(save monitor layout)*
 - Quit
 
 **View Menu:**

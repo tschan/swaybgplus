@@ -170,8 +170,8 @@ class MonitorWidget(Gtk.DrawingArea):
                 cr.clip()
                 
                 if self.preview_mode == "stretched":
-                    # For stretched mode, the image is stretched across the entire virtual screen
-                    # Calculate virtual screen dimensions
+                    # For stretched mode, we need to match the background manager's logic exactly
+                    # Calculate virtual screen dimensions (same as background manager)
                     max_x = max(output.position[0] + output.resolution[0] for output in self.outputs)
                     max_y = max(output.position[1] + output.resolution[1] for output in self.outputs)
                     virtual_width = max_x - min_x
@@ -180,28 +180,58 @@ class MonitorWidget(Gtk.DrawingArea):
                     # Get image dimensions
                     img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
                     
+                    # Apply manual scaling (same as background manager)
+                    scaled_width = int(img_width * self.image_scale)
+                    scaled_height = int(img_height * self.image_scale)
+                    
+                    # Calculate where to place the image on the virtual canvas (same as background manager)
+                    # This matches: img_x = (canvas_width - scaled_width) // 2 + image_offset[0] - crop_x
+                    virtual_img_x = (virtual_width - scaled_width) // 2 + self.image_offset[0]
+                    virtual_img_y = (virtual_height - scaled_height) // 2 + self.image_offset[1]
+                    
                     # Position of this monitor in the virtual screen
                     monitor_x_in_virtual = output.position[0] - min_x
                     monitor_y_in_virtual = output.position[1] - min_y
                     
-                    # Calculate the scaling factors to stretch image across virtual screen
-                    virtual_scale_x = virtual_width / img_width
-                    virtual_scale_y = virtual_height / img_height
+                    # Calculate which part of the scaled image appears on this monitor
+                    # This matches the background manager's cropping logic
+                    img_x_on_monitor = virtual_img_x - monitor_x_in_virtual
+                    img_y_on_monitor = virtual_img_y - monitor_y_in_virtual
                     
-                    # Calculate which part of the original image appears on this monitor
-                    # (before any scaling is applied)
-                    img_start_x = monitor_x_in_virtual / virtual_scale_x - self.image_offset[0]
-                    img_start_y = monitor_y_in_virtual / virtual_scale_y - self.image_offset[1]
-                    
-                    # Apply transformations: translate to monitor position, scale for display
-                    cr.translate(x, y)
-                    cr.scale(self.scale_factor, self.scale_factor)
-                    cr.scale(virtual_scale_x, virtual_scale_y)
-                    
-                    # Position the image so the correct portion shows on this monitor
-                    cr.set_source_surface(preview_surface, -img_start_x, -img_start_y)
-                    cr.paint_with_alpha(0.9)
-                    
+                    # Only draw if the image intersects with this monitor
+                    if (img_x_on_monitor < output.resolution[0] and img_y_on_monitor < output.resolution[1] and 
+                        img_x_on_monitor + scaled_width > 0 and img_y_on_monitor + scaled_height > 0):
+                        
+                        # Calculate the portion of the image that fits on this monitor
+                        src_x = max(0, -img_x_on_monitor)
+                        src_y = max(0, -img_y_on_monitor)
+                        dst_x = max(0, img_x_on_monitor)
+                        dst_y = max(0, img_y_on_monitor)
+                        
+                        copy_width = min(scaled_width - src_x, output.resolution[0] - dst_x)
+                        copy_height = min(scaled_height - src_y, output.resolution[1] - dst_y)
+                        
+                        if copy_width > 0 and copy_height > 0:
+                            # Apply transformations: translate to monitor position, scale for display
+                            cr.translate(x, y)
+                            cr.scale(self.scale_factor, self.scale_factor)
+                            
+                            # Scale the image to match the manual scaling
+                            cr.scale(self.image_scale, self.image_scale)
+                            
+                            # Position the image so the correct portion shows on this monitor
+                            # We need to account for the source cropping
+                            cr.set_source_surface(preview_surface, 
+                                                (dst_x - src_x) / self.image_scale, 
+                                                (dst_y - src_y) / self.image_scale)
+                            
+                            # Set clipping to only show the portion that should be visible
+                            cr.rectangle(dst_x / self.image_scale, dst_y / self.image_scale, 
+                                       copy_width / self.image_scale, copy_height / self.image_scale)
+                            cr.clip()
+                            
+                            cr.paint_with_alpha(0.9)
+                
                 elif self.preview_mode == "fill":
                     # Scale image to fill monitor, maintaining aspect ratio
                     img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
@@ -658,55 +688,6 @@ class SwayBGPlusGUI:
         content_box.set_margin_bottom(12)
         main_box.pack_start(content_box, True, True, 0)
         
-        # Header bar with buttons
-        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        content_box.pack_start(header_box, False, False, 0)
-        
-        # Refresh button
-        refresh_btn = Gtk.Button.new_with_label("🔄 Refresh Outputs")
-        refresh_btn.connect('clicked', self.on_refresh_outputs)
-        header_box.pack_start(refresh_btn, False, False, 0)
-        
-        # Load image button
-        load_image_btn = Gtk.Button.new_with_label("📁 Load Image")
-        load_image_btn.connect('clicked', self.on_load_image)
-        header_box.pack_start(load_image_btn, False, False, 0)
-        
-        # Mode selection
-        mode_label = Gtk.Label()
-        mode_label.set_text("Mode:")
-        header_box.pack_start(mode_label, False, False, 0)
-        
-        self.mode_combo = Gtk.ComboBoxText()
-        self.mode_combo.append_text("Stretched")
-        self.mode_combo.append_text("Fill")
-        self.mode_combo.append_text("Fit")
-        self.mode_combo.append_text("Center")
-        self.mode_combo.append_text("Tile")
-        self.mode_combo.set_active(0)  # Default to stretched
-        self.mode_combo.connect('changed', self.on_mode_changed)
-        header_box.pack_start(self.mode_combo, False, False, 0)
-        
-        # Apply Background button (main action button)
-        self.apply_btn = Gtk.Button.new_with_label("🎨 Apply Background")
-        self.apply_btn.connect('clicked', self.on_apply_background)
-        self.apply_btn.set_sensitive(False)  # Disabled until image is loaded
-        self.apply_btn.get_style_context().add_class("suggested-action")
-        self.apply_btn.set_tooltip_text("Apply background to all monitors and save configuration")
-        header_box.pack_start(self.apply_btn, False, False, 0)
-        
-        # Image repositioning controls
-        reset_btn = Gtk.Button.new_with_label("🔄 Reset Position")
-        reset_btn.connect('clicked', self.on_reset_image_position)
-        reset_btn.set_tooltip_text("Reset image position and scale (Ctrl+R)")
-        header_box.pack_start(reset_btn, False, False, 0)
-        
-        # Current image label
-        self.image_label = Gtk.Label()
-        self.image_label.set_text("No image selected")
-        self.image_label.set_halign(Gtk.Align.END)
-        header_box.pack_end(self.image_label, True, True, 0)
-        
         # Instructions label
         instructions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         instructions = Gtk.Label()
@@ -740,8 +721,25 @@ class SwayBGPlusGUI:
         output_frame.set_label("Output Configuration")
         right_paned.pack1(output_frame, True, False)
         
+        output_main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        output_main_box.set_margin_start(12)
+        output_main_box.set_margin_end(12)
+        output_main_box.set_margin_top(12)
+        output_main_box.set_margin_bottom(12)
+        output_frame.add(output_main_box)
+        
+        # Output controls section
+        output_controls_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        output_main_box.pack_end(output_controls_box, False, False, 0)
+        
+        # Refresh button (bottom right of output section)
+        refresh_btn = Gtk.Button.new_with_label("🔄 Refresh Outputs")
+        refresh_btn.connect('clicked', self.on_refresh_outputs)
+        refresh_btn.set_tooltip_text("Refresh monitor configuration")
+        output_controls_box.pack_end(refresh_btn, False, False, 0)
+        
         # Create output list with inline editing
-        self.create_output_list(output_frame)
+        self.create_output_list(output_main_box)
         
         # Bottom right - image preview
         preview_frame = Gtk.Frame()
@@ -764,18 +762,49 @@ class SwayBGPlusGUI:
         preview_scrolled.add(self.preview_image)
         preview_box.pack_start(preview_scrolled, True, True, 0)
         
-        # Image info label
+        # Image info label (includes filename and technical details)
         self.image_info_label = Gtk.Label()
         self.image_info_label.set_text("No image loaded")
         self.image_info_label.set_halign(Gtk.Align.START)
         preview_box.pack_start(self.image_info_label, False, False, 0)
         
-        # Status bar area with Save button
+        # Image controls section (bottom right of image section)
+        image_controls_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        preview_box.pack_end(image_controls_box, False, False, 0)
+        
+        # Load image button
+        load_image_btn = Gtk.Button.new_with_label("📁 Load Image")
+        load_image_btn.connect('clicked', self.on_load_image)
+        image_controls_box.pack_end(load_image_btn, False, False, 0)
+        
+        # Mode selection
+        self.mode_combo = Gtk.ComboBoxText()
+        self.mode_combo.append_text("Stretched")
+        self.mode_combo.append_text("Fill")
+        self.mode_combo.append_text("Fit")
+        self.mode_combo.append_text("Center")
+        self.mode_combo.append_text("Tile")
+        self.mode_combo.set_active(0)  # Default to stretched
+        self.mode_combo.connect('changed', self.on_mode_changed)
+        image_controls_box.pack_end(self.mode_combo, False, False, 0)
+        
+        # Mode label
+        mode_label = Gtk.Label()
+        mode_label.set_text("Mode:")
+        image_controls_box.pack_end(mode_label, False, False, 0)
+        
+        # Status bar area with Reset and Save buttons
         status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         
         # Status bar (takes up most space)
         self.status_bar = Gtk.Statusbar()
         status_box.pack_start(self.status_bar, True, True, 0)
+        
+        # Reset button (to the left of Save)
+        reset_bottom_btn = Gtk.Button.new_with_label("🔄 Reset")
+        reset_bottom_btn.connect('clicked', self.on_reset_image_position)
+        reset_bottom_btn.set_tooltip_text("Reset image position and scale")
+        status_box.pack_end(reset_bottom_btn, False, False, 0)
         
         # Save button in bottom right
         save_bottom_btn = Gtk.Button.new_with_label("💾 Save")
@@ -804,13 +833,6 @@ class SwayBGPlusGUI:
         
         file_menu.append(Gtk.SeparatorMenuItem())
         
-        # Save to config
-        save_config_item = Gtk.MenuItem.new_with_label("Save to Config")
-        save_config_item.connect('activate', self.on_save_monitor_config)
-        file_menu.append(save_config_item)
-        
-        file_menu.append(Gtk.SeparatorMenuItem())
-        
         # Quit
         quit_item = Gtk.MenuItem.new_with_label("Quit")
         quit_item.connect('activate', self.on_quit)
@@ -832,13 +854,9 @@ class SwayBGPlusGUI:
         show_bg_dir_item.connect('activate', self.on_show_backgrounds_dir)
         view_menu.append(show_bg_dir_item)
     
-    def create_output_list(self, parent_frame):
+    def create_output_list(self, parent_container):
         """Create the output list with inline editing capabilities"""
         list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        list_box.set_margin_start(12)
-        list_box.set_margin_end(12)
-        list_box.set_margin_top(12)
-        list_box.set_margin_bottom(12)
         
         # Instructions label
         instructions = Gtk.Label()
@@ -922,7 +940,7 @@ class SwayBGPlusGUI:
         scrolled.add(self.output_tree)
         list_box.pack_start(scrolled, True, True, 0)
         
-        parent_frame.add(list_box)
+        parent_container.pack_start(list_box, True, True, 0)
     
     def refresh_outputs(self):
         """Refresh the list of outputs"""
@@ -1220,8 +1238,6 @@ class SwayBGPlusGUI:
         if response == Gtk.ResponseType.OK:
             self.current_image_path = dialog.get_filename()
             self.load_image_preview()
-            self.apply_btn.set_sensitive(True)
-            self.image_label.set_text(f"Image: {os.path.basename(self.current_image_path)}")
             self.update_status(f"Loaded image: {self.current_image_path}")
             
             # Reset image position when loading new image
@@ -1242,7 +1258,10 @@ class SwayBGPlusGUI:
                 file_size = os.path.getsize(self.current_image_path)
                 file_size_mb = file_size / (1024 * 1024)
                 
+                # Combine filename and technical details
+                filename = os.path.basename(self.current_image_path)
                 self.image_info_label.set_text(
+                    f"Image: {filename}\n"
                     f"Size: {width}×{height}\n"
                     f"Format: {format_name}\n"
                     f"File size: {file_size_mb:.1f} MB"
@@ -1260,56 +1279,6 @@ class SwayBGPlusGUI:
         except Exception as e:
             self.show_error(f"Error loading image preview: {e}")
             self.image_info_label.set_text("Error loading image")
-    
-    def on_apply_background(self, button):
-        """Handle apply background button"""
-        if not self.current_image_path:
-            self.show_error("Please load an image first")
-            return
-        
-        if not self.outputs:
-            self.show_error("No outputs available")
-            return
-        
-        # Get current image positioning from monitor widget
-        image_offset = self.monitor_widget.image_offset
-        image_scale = self.monitor_widget.image_scale
-        
-        # Run in background thread to avoid freezing UI
-        def apply_background():
-            if self.current_mode == "stretched":
-                success = self.background_manager.set_background_stretched(
-                    self.current_image_path, self.outputs, image_offset, image_scale
-                )
-            else:
-                success = self.background_manager.set_background_fitted(
-                    self.current_image_path, self.outputs, self.current_mode, image_offset, image_scale
-                )
-            
-            GLib.idle_add(self.on_background_applied, success, self.current_mode)
-        
-        self.update_status(f"Applying background ({self.current_mode} mode)...")
-        self.apply_btn.set_sensitive(False)
-        threading.Thread(target=apply_background, daemon=True).start()
-    
-    def on_background_applied(self, success: bool, mode: str):
-        """Called when background application is complete"""
-        self.apply_btn.set_sensitive(True)
-        
-        if success:
-            self.background_applied = True  # Mark background as applied
-            # Save the original image path for future detection
-            if self.current_image_path:
-                self.save_original_image_path(self.current_image_path)
-            self.update_status(f"Background applied successfully ({mode} mode)")
-            # Show success notification
-            self.show_info("Background Applied Successfully!", 
-                          f"Background set in {mode} mode across all monitors.")
-        else:
-            self.update_status(f"Failed to apply background ({mode} mode)")
-            self.show_error(f"Failed to apply background in {mode} mode")
-        
-        return False  # Don't repeat this idle callback
     
     def show_error(self, message: str):
         """Show error dialog"""
@@ -1512,8 +1481,6 @@ class SwayBGPlusGUI:
         try:
             self.current_image_path = image_path
             self.load_image_preview()
-            self.apply_btn.set_sensitive(True)
-            self.image_label.set_text(f"Image: {os.path.basename(image_path)}")
             self.update_status(f"Auto-loaded background from {source}: {os.path.basename(image_path)}")
         except Exception as e:
             print(f"Error loading detected background {image_path}: {e}")

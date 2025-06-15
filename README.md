@@ -1,236 +1,234 @@
-# SwayBG+ - Multi-Monitor Background Manager for Sway
+# SwayBG+ - Advanced Multi-Monitor Background Manager for Sway
 
-SwayBG+ is a powerful utility for managing wallpapers across multiple monitors in the Sway window manager. It provides both command-line and graphical interfaces for stretching images across all monitors or fitting them individually.
+SwayBG+ is a powerful, feature-rich background manager specifically designed for Sway window manager. It provides both GUI and CLI interfaces for managing backgrounds across multiple monitors with advanced positioning, scaling, and persistence features.
 
-## Features
+## 🌟 Features
 
-- **Stretch Mode**: Stretch a single image across all monitors seamlessly
-- **Fit Mode**: Set the same image on each monitor individually with various scaling modes
-- **GUI Interface**: Visual monitor layout editor with drag-and-drop positioning
-- **CLI Interface**: Command-line tools for scripting and automation
-- **Live Preview**: See your monitor layout and make adjustments before applying
-- **Multiple Image Formats**: Support for JPEG, PNG, GIF, BMP, and TIFF images
-- **Sway Integration**: Works directly with sway's output configuration
+### 🎨 **Advanced Background Management**
+- **Multiple Background Modes**: Stretched, Fill, Fit, Center, Tile
+- **Visual Image Positioning**: Drag and drop image positioning with real-time preview
+- **Corner Resize Controls**: Visual resize handles for precise image scaling
+- **Multi-Monitor Support**: Seamless background management across multiple displays
+- **Real-Time Preview**: See exactly how your background will look before applying
 
-## Installation
+### 🖥️ **Monitor Configuration**
+- **Visual Monitor Layout**: Drag and drop monitor positioning
+- **Inline Editing**: Double-click to edit resolution, position, and scale
+- **Real Resolution Detection**: Automatically detects available resolutions for each monitor
+- **Live Configuration**: Apply changes immediately or save to config file
 
-### Prerequisites
+### 💾 **Persistence & Startup**
+- **Automatic Persistence**: Backgrounds survive reboots and sway restarts
+- **Startup Integration**: Automatically adds restoration script to sway config
+- **Configuration Backup**: Automatic backup of sway config before changes
+- **Smart Detection**: Automatically detects and restores previous backgrounds
 
-- Sway window manager
-- `swaybg` (usually included with sway)
-- Python 3.7+
-- Python packages: `Pillow`, `PyGObject` (for GUI)
+### 🎯 **User Interface**
+- **Intuitive GUI**: Clean, modern interface with visual controls
+- **Powerful CLI**: Full command-line interface for automation and scripting
+- **Smart Workflows**: Simplified button layout eliminates confusion
+- **Real-Time Feedback**: Live status updates and error handling
 
-### Install Dependencies
+## 🚀 Quick Start
 
-On Arch Linux:
+### Installation
+
 ```bash
-sudo pacman -S python-pillow python-gobject gtk3 swaybg
-```
-
-On Ubuntu/Debian:
-```bash
-sudo apt install python3-pil python3-gi python3-gi-cairo gir1.2-gtk-3.0 swaybg
-```
-
-On Fedora:
-```bash
-sudo dnf install python3-pillow python3-gobject gtk3-devel swaybg
-```
-
-### Install SwayBG+
-
-1. Clone or download this repository:
-```bash
-git clone <repository-url> swaybgplus
+# Clone the repository
+git clone https://github.com/yourusername/swaybgplus.git
 cd swaybgplus
-```
 
-2. Install Python dependencies:
-```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Make executable
+chmod +x swaybgplus_gui.py swaybgplus_cli.py
 ```
 
-3. Make scripts executable:
+### GUI Usage
+
 ```bash
-chmod +x swaybgplus_cli.py swaybgplus_gui.py
-```
-
-## Usage
-
-### GUI Interface
-
-Launch the graphical interface:
-```bash
+# Launch the graphical interface
 python3 swaybgplus_gui.py
-# or
-python3 swaybgplus_cli.py gui
 ```
 
-The GUI provides:
-- Visual monitor layout with drag-and-drop positioning
-- Image file browser and loader
-- Real-time preview of monitor arrangements
-- Apply buttons for different background modes
-- Monitor information panel
+**Workflow:**
+1. **Load Image** → Click "📁 Load Image" to select your background
+2. **Position & Scale** → Drag image to move, drag corners to resize
+3. **Choose Mode** → Select background mode (Stretched, Fill, Fit, Center, Tile)
+4. **Apply Background** → Click "🎨 Apply Background" to apply and save
+5. **Save Layout** → Click "💾 Save" to save monitor configuration
 
-### Command-Line Interface
-
-#### Basic Commands
-
-List current outputs:
-```bash
-python3 swaybgplus_cli.py list-outputs
-```
-
-Stretch an image across all monitors:
-```bash
-python3 swaybgplus_cli.py stretch /path/to/image.jpg
-```
-
-Fit an image on each monitor:
-```bash
-python3 swaybgplus_cli.py fit /path/to/image.jpg --mode fill
-```
-
-Kill all background processes:
-```bash
-python3 swaybgplus_cli.py kill-backgrounds
-```
-
-#### Background Modes
-
-- `stretch`: Stretch image to fit exact dimensions (may distort)
-- `fill`: Scale image to fill screen, cropping if necessary (default)
-- `fit`: Scale image to fit within screen, may leave black bars
-- `center`: Center image without scaling
-- `tile`: Repeat image to fill screen
-
-### Examples
-
-Set a stretched background across three monitors:
-```bash
-python3 swaybgplus_cli.py stretch ~/Pictures/landscape.jpg
-```
-
-Set individual wallpapers with fill mode:
-```bash
-python3 swaybgplus_cli.py fit ~/Pictures/wallpaper.png --mode fill
-```
-
-Check your current monitor setup:
-```bash
-python3 swaybgplus_cli.py list-outputs
-```
-
-## How It Works
-
-### Image Processing
-
-1. **Stretch Mode**: Creates a large canvas spanning all monitors, stretches the source image to fit, then crops individual sections for each monitor
-2. **Fit Mode**: Applies the same image to each monitor using swaybg's built-in scaling modes
-
-### Sway Integration
-
-- Uses `swaymsg -t get_outputs` to detect current monitor configuration
-- Leverages `swaybg` for actually setting backgrounds
-- Supports all sway output features (scaling, rotation, positioning)
-
-### Monitor Detection
-
-The tool automatically detects:
-- Monitor names and positions
-- Screen resolutions and scaling factors
-- Active vs inactive monitors
-- Multi-monitor layouts (side-by-side, stacked, mixed)
-
-## Configuration
-
-### Sway Config Integration
-
-You can integrate SwayBG+ into your sway config for automatic startup:
+### CLI Usage
 
 ```bash
-# ~/.config/sway/config
-exec python3 /path/to/swaybgplus_cli.py stretch ~/Pictures/wallpaper.jpg
+# Set stretched background across all monitors
+python3 swaybgplus_cli.py image.jpg --mode stretched
+
+# Set fitted background with custom positioning
+python3 swaybgplus_cli.py image.jpg --mode fill --offset-x 100 --offset-y 50 --scale 1.2
+
+# Restore saved background configuration
+python3 swaybgplus_cli.py --restore
+
+# List current outputs
+python3 swaybgplus_cli.py --list-outputs
+
+# Clean up old background files
+python3 swaybgplus_cli.py --cleanup
 ```
 
-### Custom Monitor Layouts
+## 🎛️ Interface Overview
 
-The GUI allows you to:
-- Drag monitors to reposition them
-- View current positioning and resolution
-- Test different layouts before applying backgrounds
+### Main Window Layout
 
-## Troubleshooting
+```
+[File] [View]                                                    [✕]
+────────────────────────────────────────────────────────────────────
+[🔄 Refresh] [📁 Load Image] [Mode: Stretched ▼] [🎨 Apply Background] [🔄 Reset]
+
+┌─────────────────────────────────┬─────────────────────────────────┐
+│ Monitor Layout & Preview        │ Output Configuration            │
+│                                 │ ┌─────────────────────────────┐ │
+│  ┌─────┐    ┌─────┐            │ │ Output │ Resolution │ Pos... │ │
+│  │ DP-1│    │DP-2 │            │ │ DP-1   │ 2560x1440  │ 0,0    │ │
+│  │     │    │     │            │ │ DP-2   │ 2560x1440  │ 2560,0 │ │
+│  └─────┘    └─────┘            │ └─────────────────────────────┘ │
+│                                 │                                 │
+│  [Background Preview Here]      │ Image Preview                   │
+│                                 │ ┌─────────────────────────────┐ │
+│                                 │ │                             │ │
+│                                 │ │    [Image Thumbnail]        │ │
+│                                 │ │                             │ │
+│                                 │ └─────────────────────────────┘ │
+└─────────────────────────────────┴─────────────────────────────────┘
+
+Status: Ready...                                              [💾 Save]
+```
+
+### Menu Structure
+
+**File Menu:**
+- Select Sway Config... *(choose config file)*
+- Save to Config *(save monitor layout)*
+- Quit
+
+**View Menu:**
+- Show Config Path *(display current config file)*
+- Show Backgrounds Directory *(show where backgrounds are stored)*
+
+## 🔧 Background Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Stretched** | Single image stretched across all monitors | Panoramic wallpapers, unified desktop |
+| **Fill** | Image scaled to fill each monitor (may crop) | Photos, maintaining aspect ratio |
+| **Fit** | Image scaled to fit each monitor (may letterbox) | Logos, preserving full image |
+| **Center** | Image centered on each monitor at original size | Icons, small graphics |
+| **Tile** | Image repeated across each monitor | Patterns, textures |
+
+## 🎮 Controls
+
+### Visual Controls
+- **Drag Image**: Click and drag to move image position
+- **Resize Corners**: Drag white corner handles to scale image
+- **Monitor Selection**: Click monitors to select and configure
+- **Monitor Movement**: Drag selected monitors to reposition
+
+### Keyboard Shortcuts
+- **Ctrl+R**: Reset image position and scale to defaults
+
+### Mouse Controls
+- **Left Click**: Select monitor or start dragging
+- **Drag**: Move image or monitor
+- **Corner Drag**: Resize image proportionally
+
+## 📁 File Structure
+
+```
+~/.config/sway/backgrounds/
+├── current_config.json          # Current background configuration
+├── restore_background.sh        # Startup restoration script
+├── image_DP-1.png              # Processed background for monitor 1
+├── image_DP-2.png              # Processed background for monitor 2
+└── image_original.jpg          # Original image copy
+```
+
+## ⚙️ Configuration
+
+### Automatic Startup
+SwayBG+ automatically adds this line to your sway config:
+```bash
+exec ~/.config/sway/backgrounds/restore_background.sh
+```
+
+### Manual Configuration
+You can also manually configure backgrounds:
+```bash
+# Apply specific background mode
+swaybg -o DP-1 -i ~/.config/sway/backgrounds/image_DP-1.png -m stretch
+```
+
+## 🔍 Troubleshooting
 
 ### Common Issues
 
-**"No outputs available"**
-- Make sure you're running this inside a sway session
-- Check that `swaymsg -t get_outputs` returns active outputs
+**Background doesn't persist after reboot:**
+- Check if startup script was added to sway config
+- Verify script permissions: `chmod +x ~/.config/sway/backgrounds/restore_background.sh`
 
-**"swaybg not found"**
-- Install swaybg: `sudo pacman -S swaybg` (Arch) or equivalent
-- Make sure swaybg is in your PATH
+**Resolution dropdown is empty:**
+- Ensure monitor is connected and active
+- Check `swaymsg -t get_outputs` for available modes
 
-**GUI won't start**
-- Install GTK+ dependencies: `sudo pacman -S python-gobject gtk3`
-- Try running from a terminal to see error messages
+**Image positioning feels inverted:**
+- This has been fixed in recent versions
+- Try resetting position with Ctrl+R
 
-**Images appear distorted**
-- Use "fit" mode instead of "stretch" to maintain aspect ratio
-- Try different scaling modes (fill, fit, center)
+**GUI won't start:**
+- Install GTK dependencies: `sudo pacman -S python-gobject gtk3`
+- Check Python version: requires Python 3.6+
 
-### Debug Output
+### Debug Commands
 
-Run with verbose output to troubleshoot:
 ```bash
-python3 swaybgplus_cli.py list-outputs  # Check detected monitors
-python3 swaybgplus_cli.py kill-backgrounds  # Clear existing backgrounds
+# Check current outputs
+swaymsg -t get_outputs
+
+# List running swaybg processes
+ps aux | grep swaybg
+
+# Check saved configuration
+cat ~/.config/sway/backgrounds/current_config.json
+
+# Test CLI restore
+python3 swaybgplus_cli.py --restore
 ```
 
-## Technical Details
+## 🛠️ Dependencies
 
-### File Structure
+- **Python 3.6+**
+- **Sway window manager**
+- **swaybg** (background setter)
+- **Python packages**:
+  - `Pillow` (image processing)
+  - `PyGObject` (GTK GUI)
+- **System packages**:
+  - `gtk3`
+  - `python-gobject`
 
-- `sway_config_parser.py`: Sway configuration and output detection
-- `background_manager.py`: Image processing and swaybg integration  
-- `swaybgplus_gui.py`: GTK-based graphical interface
-- `swaybgplus_cli.py`: Command-line interface
-- `requirements.txt`: Python dependencies
+## 📝 License
 
-### Dependencies
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-- **Pillow (PIL)**: Image processing and manipulation
-- **PyGObject**: GTK+ bindings for GUI (optional)
-- **swaybg**: Sway's background setter (required)
+## 🤝 Contributing
 
-### Supported Image Formats
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- JPEG (.jpg, .jpeg)
-- PNG (.png) 
-- GIF (.gif)
-- BMP (.bmp)
-- TIFF (.tiff, .tif)
+## 🐛 Bug Reports
 
-## Contributing
+Please report bugs and feature requests through the GitHub issue tracker.
 
-Contributions are welcome! Please feel free to:
-- Report bugs or request features via issues
-- Submit pull requests with improvements
-- Share your custom monitor configurations
-- Help with documentation and testing
+---
 
-## License
-
-This project is open source. Please check the license file for details.
-
-## Alternatives
-
-Other background managers for sway:
-- `swaybg` (basic, included with sway)
-- `azote` (GUI wallpaper manager)
-- `feh` (works with X11/XWayland)
-
-SwayBG+ focuses specifically on multi-monitor stretched backgrounds, which most other tools don't handle well. 
+**SwayBG+** - Making multi-monitor background management simple and powerful! 🎨✨ 

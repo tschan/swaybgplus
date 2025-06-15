@@ -190,8 +190,8 @@ class MonitorWidget(Gtk.DrawingArea):
                     
                     # Calculate which part of the original image appears on this monitor
                     # (before any scaling is applied)
-                    img_start_x = monitor_x_in_virtual / virtual_scale_x + self.image_offset[0]
-                    img_start_y = monitor_y_in_virtual / virtual_scale_y + self.image_offset[1]
+                    img_start_x = monitor_x_in_virtual / virtual_scale_x - self.image_offset[0]
+                    img_start_y = monitor_y_in_virtual / virtual_scale_y - self.image_offset[1]
                     
                     # Apply transformations: translate to monitor position, scale for display
                     cr.translate(x, y)
@@ -215,8 +215,8 @@ class MonitorWidget(Gtk.DrawingArea):
                     scaled_height = img_height * scale
                     
                     # Center the scaled image
-                    offset_x_calc = (monitor_width - scaled_width) / 2 + self.image_offset[0]
-                    offset_y_calc = (monitor_height - scaled_height) / 2 + self.image_offset[1]
+                    offset_x_calc = (monitor_width - scaled_width) / 2 - self.image_offset[0]
+                    offset_y_calc = (monitor_height - scaled_height) / 2 - self.image_offset[1]
                     
                     cr.translate(x, y)
                     cr.scale(self.scale_factor, self.scale_factor)
@@ -237,8 +237,8 @@ class MonitorWidget(Gtk.DrawingArea):
                     scaled_height = img_height * scale
                     
                     # Center the scaled image
-                    offset_x_calc = (monitor_width - scaled_width) / 2 + self.image_offset[0]
-                    offset_y_calc = (monitor_height - scaled_height) / 2 + self.image_offset[1]
+                    offset_x_calc = (monitor_width - scaled_width) / 2 - self.image_offset[0]
+                    offset_y_calc = (monitor_height - scaled_height) / 2 - self.image_offset[1]
                     
                     cr.translate(x, y)
                     cr.scale(self.scale_factor, self.scale_factor)
@@ -255,8 +255,8 @@ class MonitorWidget(Gtk.DrawingArea):
                     scaled_width = img_width * self.image_scale
                     scaled_height = img_height * self.image_scale
                     
-                    offset_x_calc = (monitor_width - scaled_width) / 2 + self.image_offset[0]
-                    offset_y_calc = (monitor_height - scaled_height) / 2 + self.image_offset[1]
+                    offset_x_calc = (monitor_width - scaled_width) / 2 - self.image_offset[0]
+                    offset_y_calc = (monitor_height - scaled_height) / 2 - self.image_offset[1]
                     
                     cr.translate(x, y)
                     cr.scale(self.scale_factor, self.scale_factor)
@@ -279,7 +279,7 @@ class MonitorWidget(Gtk.DrawingArea):
                     
                     # Apply image offset (scaled for the tile scaling)
                     matrix = cairo.Matrix()
-                    matrix.translate(-self.image_offset[0] / self.image_scale, -self.image_offset[1] / self.image_scale)
+                    matrix.translate(self.image_offset[0] / self.image_scale, self.image_offset[1] / self.image_scale)
                     pattern.set_matrix(matrix)
                     
                     cr.set_source(pattern)
@@ -338,23 +338,25 @@ class MonitorWidget(Gtk.DrawingArea):
     def on_button_press(self, widget, event):
         """Handle mouse button press"""
         if event.button == 1:  # Left click
-            # Check for resize handle first
-            resize_handle = self.get_resize_handle_at_position(event.x, event.y)
-            if resize_handle:
-                self.resizing_image = True
-                self.resize_handle = resize_handle
-                self.drag_start = (event.x, event.y)
-                return True
-            
-            # Check if clicking on image for dragging
-            if self.is_point_in_image(event.x, event.y):
-                self.dragging_image = True
-                self.drag_start = (event.x, event.y)
-                return True
-            
-            # Otherwise, check for monitor selection
+            # First check for monitor selection (highest priority)
             clicked_output = self.get_output_at_position(event.x, event.y)
             if clicked_output:
+                # Check if clicking on resize handle first
+                if self.preview_image:
+                    resize_handle = self.get_resize_handle_at_position(event.x, event.y)
+                    if resize_handle:
+                        self.resizing_image = True
+                        self.resize_handle = resize_handle
+                        self.drag_start = (event.x, event.y)
+                        return True
+                    
+                    # Check if clicking on image for dragging (only if within monitor bounds)
+                    if self.is_point_in_image(event.x, event.y):
+                        self.dragging_image = True
+                        self.drag_start = (event.x, event.y)
+                        return True
+                
+                # Otherwise, select and potentially drag the monitor
                 self.selected_output = clicked_output
                 self.dragging = True
                 self.drag_start = (event.x, event.y)
@@ -412,6 +414,7 @@ class MonitorWidget(Gtk.DrawingArea):
             dy = event.y - self.drag_start[1]
             
             # Convert screen movement to image offset (correct direction)
+            # Positive dx should move image right, positive dy should move image down
             offset_scale = 1.0 / self.scale_factor
             self.image_offset = (
                 self.image_offset[0] + dx * offset_scale,
@@ -994,11 +997,47 @@ class SwayBGPlusGUI:
             self.selected_output = output
             self.monitor_widget.selected_output = output
             self.monitor_widget.queue_draw()
+            
+            # Update resolution dropdown for this output
+            available_resolutions = self.parser.get_available_resolutions(output.name)
+            resolution_model = self.resolution_renderer.get_property("model")
+            resolution_model.clear()
+            
+            # Add available resolutions
+            for res in available_resolutions:
+                resolution_model.append([res])
+            
+            # Add some common fallbacks if none available
+            if not available_resolutions:
+                common_resolutions = [
+                    "1920x1080", "2560x1440", "3840x2160", "1680x1050", "1600x900",
+                    "1366x768", "1280x720", "1024x768"
+                ]
+                for res in common_resolutions:
+                    resolution_model.append([res])
     
     def on_resolution_edited(self, renderer, path, new_text):
         """Handle resolution cell editing"""
         tree_iter = self.output_store.get_iter(path)
         output = self.output_store[tree_iter][5]  # Get output object
+        
+        # Update resolution dropdown with available resolutions for this output
+        available_resolutions = self.parser.get_available_resolutions(output.name)
+        resolution_model = renderer.get_property("model")
+        resolution_model.clear()
+        
+        # Add available resolutions
+        for res in available_resolutions:
+            resolution_model.append([res])
+        
+        # Add some common fallbacks if none available
+        if not available_resolutions:
+            common_resolutions = [
+                "1920x1080", "2560x1440", "3840x2160", "1680x1050", "1600x900",
+                "1366x768", "1280x720", "1024x768"
+            ]
+            for res in common_resolutions:
+                resolution_model.append([res])
         
         if 'x' in new_text:
             try:

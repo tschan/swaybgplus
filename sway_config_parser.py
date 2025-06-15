@@ -326,6 +326,34 @@ class SwayConfigParser:
         """Get the total resolution spanning all screens"""
         min_x, min_y, max_x, max_y = self.get_total_screen_bounds()
         return (max_x - min_x, max_y - min_y)
+    
+    def get_available_resolutions(self, output_name: str) -> List[str]:
+        """Get available resolutions for a specific output"""
+        try:
+            result = subprocess.run(['swaymsg', '-t', 'get_outputs'], 
+                                  capture_output=True, text=True, check=True)
+            outputs_data = json.loads(result.stdout)
+            
+            for output in outputs_data:
+                if output['name'] == output_name:
+                    resolutions = set()  # Use set to avoid duplicates
+                    for mode in output.get('modes', []):
+                        width = mode.get('width')
+                        height = mode.get('height')
+                        if width and height:
+                            resolutions.add(f"{width}x{height}")
+                    
+                    # Sort resolutions by total pixels (descending)
+                    sorted_resolutions = sorted(list(resolutions), 
+                                              key=lambda x: int(x.split('x')[0]) * int(x.split('x')[1]), 
+                                              reverse=True)
+                    return sorted_resolutions
+            
+            return []
+            
+        except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
+            print(f"Error getting available resolutions for {output_name}: {e}")
+            return []
 
 
 if __name__ == "__main__":

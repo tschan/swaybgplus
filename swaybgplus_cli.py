@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-SwayBG+ CLI - Command-line interface for managing sway backgrounds
+SwayBG+ CLI - Command line interface for managing sway backgrounds
 """
 
 import argparse
 import sys
 import os
-from sway_config_parser import SwayConfigParser
+from typing import List
+
+from sway_config_parser import SwayConfigParser, OutputConfig
 from background_manager import BackgroundManager
 
 
@@ -16,154 +18,127 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s stretch /path/to/image.jpg
-  %(prog)s fit /path/to/image.jpg --mode fill
-  %(prog)s list-outputs
-  %(prog)s kill-backgrounds
+  # Set stretched background across all monitors
+  swaybgplus_cli.py image.jpg --mode stretched
+  
+  # Set fitted background on each monitor
+  swaybgplus_cli.py image.jpg --mode fill
+  
+  # Restore saved background configuration
+  swaybgplus_cli.py --restore
+  
+  # List current outputs
+  swaybgplus_cli.py --list-outputs
         """
     )
     
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    parser.add_argument('image', nargs='?', help='Path to background image')
+    parser.add_argument('--mode', '-m', 
+                       choices=['stretched', 'fill', 'fit', 'center', 'tile'],
+                       default='stretched',
+                       help='Background mode (default: stretched)')
+    parser.add_argument('--restore', '-r', action='store_true',
+                       help='Restore saved background configuration')
+    parser.add_argument('--list-outputs', '-l', action='store_true',
+                       help='List current outputs')
+    parser.add_argument('--config', '-c', 
+                       help='Path to sway config file')
+    parser.add_argument('--offset-x', type=int, default=0,
+                       help='Horizontal image offset (default: 0)')
+    parser.add_argument('--offset-y', type=int, default=0,
+                       help='Vertical image offset (default: 0)')
+    parser.add_argument('--scale', type=float, default=1.0,
+                       help='Image scale factor (default: 1.0)')
+    parser.add_argument('--cleanup', action='store_true',
+                       help='Clean up old background files')
     
-    # Stretch command
-    stretch_parser = subparsers.add_parser(
-        'stretch', 
-        help='Stretch image across all monitors'
-    )
-    stretch_parser.add_argument('image', help='Path to image file')
-    
-    # Fit command
-    fit_parser = subparsers.add_parser(
-        'fit', 
-        help='Fit image on each monitor individually'
-    )
-    fit_parser.add_argument('image', help='Path to image file')
-    fit_parser.add_argument(
-        '--mode', 
-        choices=['stretch', 'fill', 'fit', 'center', 'tile'],
-        default='fill',
-        help='Background mode (default: fill)'
-    )
-    
-    # List outputs command
-    list_parser = subparsers.add_parser(
-        'list-outputs', 
-        help='List current sway outputs'
-    )
-    
-    # Kill backgrounds command
-    kill_parser = subparsers.add_parser(
-        'kill-backgrounds', 
-        help='Kill all running swaybg processes'
-    )
-    
-    # GUI command
-    gui_parser = subparsers.add_parser(
-        'gui', 
-        help='Launch graphical interface'
-    )
-    
-    # Parse arguments
     args = parser.parse_args()
     
-    if not args.command:
-        parser.print_help()
-        return 1
-    
-    # Initialize components
+    # Initialize managers
     config_parser = SwayConfigParser()
     background_manager = BackgroundManager()
     
-    try:
-        if args.command == 'stretch':
-            if not os.path.exists(args.image):
-                print(f"Error: Image file '{args.image}' not found", file=sys.stderr)
-                return 1
-            
-            outputs = config_parser.get_current_outputs()
-            if not outputs:
-                print("Error: No active outputs found", file=sys.stderr)
-                return 1
-            
-            print(f"Stretching '{args.image}' across {len(outputs)} outputs...")
-            success = background_manager.set_background_stretched(args.image, outputs)
-            
-            if success:
-                print("Background set successfully!")
-                return 0
-            else:
-                print("Failed to set background", file=sys.stderr)
-                return 1
-        
-        elif args.command == 'fit':
-            if not os.path.exists(args.image):
-                print(f"Error: Image file '{args.image}' not found", file=sys.stderr)
-                return 1
-            
-            outputs = config_parser.get_current_outputs()
-            if not outputs:
-                print("Error: No active outputs found", file=sys.stderr)
-                return 1
-            
-            print(f"Setting '{args.image}' on {len(outputs)} outputs (mode: {args.mode})...")
-            success = background_manager.set_background_fitted(args.image, outputs, args.mode)
-            
-            if success:
-                print("Background set successfully!")
-                return 0
-            else:
-                print("Failed to set background", file=sys.stderr)
-                return 1
-        
-        elif args.command == 'list-outputs':
-            outputs = config_parser.get_current_outputs()
-            
-            if not outputs:
-                print("No active outputs found")
-                return 0
-            
-            print(f"Found {len(outputs)} active outputs:")
-            print()
-            
-            for output in outputs:
-                print(f"Name: {output.name}")
-                print(f"  Resolution: {output.resolution[0]}x{output.resolution[1]}")
-                print(f"  Position: {output.position[0]}, {output.position[1]}")
-                print(f"  Scale: {output.scale}")
-                print(f"  Transform: {output.transform}")
-                print()
-            
-            # Show total virtual screen size
-            total_width, total_height = config_parser.get_total_resolution()
-            print(f"Total virtual screen: {total_width}x{total_height}")
-            
-            return 0
-        
-        elif args.command == 'kill-backgrounds':
-            print("Killing all swaybg processes...")
-            background_manager.kill_all_backgrounds()
-            print("Done!")
-            return 0
-        
-        elif args.command == 'gui':
-            try:
-                from swaybgplus_gui import SwayBGPlusGUI
-                print("Launching GUI...")
-                app = SwayBGPlusGUI()
-                app.run()
-                return 0
-            except ImportError as e:
-                print(f"Error: GUI dependencies not available: {e}", file=sys.stderr)
-                print("Please install GTK+ dependencies: sudo pacman -S python-gobject gtk3", file=sys.stderr)
-                return 1
-        
-        else:
-            parser.print_help()
-            return 1
+    # Set custom config path if provided
+    if args.config:
+        config_parser.set_config_path(args.config)
     
-    finally:
+    # Handle restore command
+    if args.restore:
+        print("Restoring saved background configuration...")
+        success = background_manager.restore_background()
+        if success:
+            print("Background restored successfully")
+        else:
+            print("Failed to restore background")
+            sys.exit(1)
+        return
+    
+    # Handle cleanup command
+    if args.cleanup:
+        print("Cleaning up old background files...")
         background_manager.cleanup()
+        print("Cleanup completed")
+        return
+    
+    # Handle list outputs command
+    if args.list_outputs:
+        outputs = config_parser.get_current_outputs()
+        if not outputs:
+            print("No outputs found")
+            return
+        
+        print(f"Found {len(outputs)} outputs:")
+        for output in outputs:
+            status = "enabled" if output.enabled else "disabled"
+            print(f"  {output.name}: {output.resolution[0]}x{output.resolution[1]} "
+                  f"at ({output.position[0]}, {output.position[1]}) "
+                  f"scale {output.scale} [{status}]")
+        return
+    
+    # Require image path for background setting
+    if not args.image:
+        parser.error("Image path is required unless using --restore, --list-outputs, or --cleanup")
+    
+    # Check if image exists
+    if not os.path.exists(args.image):
+        print(f"Error: Image file not found: {args.image}")
+        sys.exit(1)
+    
+    # Get current outputs
+    outputs = config_parser.get_current_outputs()
+    if not outputs:
+        print("Error: No outputs found")
+        sys.exit(1)
+    
+    print(f"Setting background: {args.image}")
+    print(f"Mode: {args.mode}")
+    print(f"Outputs: {', '.join(output.name for output in outputs)}")
+    
+    if args.offset_x != 0 or args.offset_y != 0:
+        print(f"Image offset: ({args.offset_x}, {args.offset_y})")
+    
+    if args.scale != 1.0:
+        print(f"Image scale: {args.scale}")
+    
+    # Apply background
+    image_offset = (args.offset_x, args.offset_y)
+    
+    if args.mode == 'stretched':
+        success = background_manager.set_background_stretched(
+            args.image, outputs, image_offset, args.scale
+        )
+    else:
+        success = background_manager.set_background_fitted(
+            args.image, outputs, args.mode, image_offset, args.scale
+        )
+    
+    if success:
+        print("Background applied successfully")
+        print(f"Configuration saved to: {background_manager.config_dir}")
+    else:
+        print("Failed to apply background")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    main() 

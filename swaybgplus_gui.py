@@ -41,7 +41,6 @@ class MonitorWidget(Gtk.DrawingArea):
         self.preview_mode = "stretched"  # Background mode for preview
         self.image_offset = (0, 0)  # Image offset for repositioning
         self.image_scale = 1.0  # Image scale factor for manual scaling
-        self.resize_handle_size = 10  # Size of resize handles
         self.resize_handle = None  # Which resize handle is being dragged
         
         self.set_size_request(800, 600)
@@ -381,16 +380,25 @@ class MonitorWidget(Gtk.DrawingArea):
             dx = event.x - self.drag_start[0]
             dy = event.y - self.drag_start[1]
             
-            # Calculate scale change based on resize handle
-            if self.resize_handle in ['bottom-right', 'top-left']:
-                # Proportional scaling
-                scale_change = 1.0 + (dx + dy) / 200.0
-            elif self.resize_handle in ['bottom-left', 'top-right']:
-                # Proportional scaling (opposite direction)
-                scale_change = 1.0 + (dx - dy) / 200.0
+            # Calculate scale change based on resize handle and movement
+            movement_factor = 0.005  # Sensitivity factor
+            
+            if self.resize_handle in ['bottom-right']:
+                # Bottom-right: positive movement increases size
+                scale_change = 1.0 + (dx + dy) * movement_factor
+            elif self.resize_handle in ['top-left']:
+                # Top-left: negative movement increases size
+                scale_change = 1.0 + (-dx - dy) * movement_factor
+            elif self.resize_handle in ['bottom-left']:
+                # Bottom-left: left-down movement increases size
+                scale_change = 1.0 + (-dx + dy) * movement_factor
+            elif self.resize_handle in ['top-right']:
+                # Top-right: right-up movement increases size
+                scale_change = 1.0 + (dx - dy) * movement_factor
             else:
                 scale_change = 1.0
             
+            # Apply scale change
             new_scale = self.image_scale * scale_change
             self.image_scale = max(0.1, min(5.0, new_scale))
             
@@ -399,11 +407,11 @@ class MonitorWidget(Gtk.DrawingArea):
             return True
             
         elif self.dragging_image:
-            # Handle image dragging
+            # Handle image dragging - fix inverse direction
             dx = event.x - self.drag_start[0]
             dy = event.y - self.drag_start[1]
             
-            # Convert screen movement to image offset
+            # Convert screen movement to image offset (correct direction)
             offset_scale = 1.0 / self.scale_factor
             self.image_offset = (
                 self.image_offset[0] + dx * offset_scale,
@@ -529,14 +537,15 @@ class MonitorWidget(Gtk.DrawingArea):
             return
         
         x, y, width, height = bounds
-        handle_size = self.resize_handle_size
+        handle_size = 12  # Increased size for better visibility
         
-        # Draw semi-transparent overlay
-        cr.set_source_rgba(1, 1, 1, 0.3)
+        # Draw semi-transparent overlay border
+        cr.set_source_rgba(1, 1, 1, 0.5)
+        cr.set_line_width(2)
         cr.rectangle(x, y, width, height)
         cr.stroke()
         
-        # Draw corner handles
+        # Draw corner handles with better visibility
         handles = [
             (x - handle_size/2, y - handle_size/2),  # top-left
             (x + width - handle_size/2, y - handle_size/2),  # top-right
@@ -544,13 +553,16 @@ class MonitorWidget(Gtk.DrawingArea):
             (x + width - handle_size/2, y + height - handle_size/2),  # bottom-right
         ]
         
-        cr.set_source_rgba(1, 1, 1, 0.8)
+        # Draw handle backgrounds (white with border)
         for hx, hy in handles:
+            # White fill
+            cr.set_source_rgba(1, 1, 1, 0.9)
             cr.rectangle(hx, hy, handle_size, handle_size)
             cr.fill()
-        
-        cr.set_source_rgba(0, 0, 0, 0.8)
-        for hx, hy in handles:
+            
+            # Dark border
+            cr.set_source_rgba(0, 0, 0, 0.8)
+            cr.set_line_width(1)
             cr.rectangle(hx, hy, handle_size, handle_size)
             cr.stroke()
     
@@ -561,7 +573,7 @@ class MonitorWidget(Gtk.DrawingArea):
             return None
         
         bx, by, width, height = bounds
-        handle_size = self.resize_handle_size
+        handle_size = 12  # Match the increased size
         
         handles = {
             'top-left': (bx - handle_size/2, by - handle_size/2),
@@ -629,7 +641,6 @@ class SwayBGPlusGUI:
         close_btn = Gtk.Button.new_with_label("✕")
         close_btn.connect('clicked', self.on_quit)
         close_btn.set_tooltip_text("Close application")
-        close_btn.get_style_context().add_class("destructive-action")
         close_btn.set_size_request(40, -1)
         menubar_box.pack_end(close_btn, False, False, 0)
         
@@ -767,7 +778,6 @@ class SwayBGPlusGUI:
         save_bottom_btn = Gtk.Button.new_with_label("💾 Save")
         save_bottom_btn.connect('clicked', self.on_save_monitor_config)
         save_bottom_btn.set_tooltip_text("Save monitor configuration to sway config file")
-        save_bottom_btn.get_style_context().add_class("suggested-action")
         status_box.pack_end(save_bottom_btn, False, False, 0)
         
         content_box.pack_end(status_box, False, False, 0)
@@ -849,13 +859,25 @@ class SwayBGPlusGUI:
         # Resolution column (editable with dropdown)
         self.resolution_renderer = Gtk.CellRendererCombo()
         self.resolution_renderer.set_property("editable", True)
-        self.resolution_renderer.set_property("model", Gtk.ListStore(str))
+        
+        # Create resolution model with common resolutions
+        resolution_model = Gtk.ListStore(str)
+        common_resolutions = [
+            "1920x1080", "2560x1440", "3840x2160", "1680x1050", "1600x900",
+            "1366x768", "1280x720", "1024x768", "800x600", "640x480",
+            "3440x1440", "2560x1080", "1920x1200", "1440x900", "1280x1024"
+        ]
+        for res in common_resolutions:
+            resolution_model.append([res])
+        
+        self.resolution_renderer.set_property("model", resolution_model)
         self.resolution_renderer.set_property("text-column", 0)
-        self.resolution_renderer.set_property("has-entry", False)
+        self.resolution_renderer.set_property("has-entry", True)  # Allow custom input
         self.resolution_renderer.connect("edited", self.on_resolution_edited)
         
         column = Gtk.TreeViewColumn("Resolution", self.resolution_renderer, text=1)
-        column.set_min_width(120)
+        column.set_min_width(150)  # Increased minimum width
+        column.set_expand(True)    # Allow column to expand
         column.set_resizable(True)
         self.output_tree.append_column(column)
         

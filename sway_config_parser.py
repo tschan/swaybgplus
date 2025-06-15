@@ -252,14 +252,34 @@ class SwayConfigParser:
             else:
                 content = self.config_content or ""
             
-            # Remove existing output lines
+            # Remove existing output configuration section
             lines = content.split('\n')
             new_lines = []
+            skip_section = False
             
             for line in lines:
                 stripped = line.strip()
-                if not stripped.startswith('output ') or stripped.startswith('#'):
-                    new_lines.append(line)
+                
+                # Check if this is the start of our output configuration section
+                if stripped == "# Output configurations (updated by SwayBG+)":
+                    skip_section = True
+                    continue
+                
+                # Skip output lines and empty lines in our section
+                if skip_section:
+                    if stripped.startswith('output '):
+                        continue
+                    elif stripped == "":
+                        continue
+                    else:
+                        # End of our section, stop skipping
+                        skip_section = False
+                        new_lines.append(line)
+                else:
+                    # Keep lines that are not part of our managed section
+                    # But still remove any standalone output lines that might be from manual edits
+                    if not stripped.startswith('output '):
+                        new_lines.append(line)
             
             # Add updated output configurations
             new_lines.append("")

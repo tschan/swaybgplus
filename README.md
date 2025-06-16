@@ -50,7 +50,7 @@ cd swaybgplus
 pip install -r requirements.txt
 
 # Make executable
-chmod +x swaybgplus_gui.py swaybgplus_cli.py
+python setup.py
 ```
 
 ### GUI Usage
@@ -95,46 +95,6 @@ python3 swaybgplus_cli.py --list-outputs
 python3 swaybgplus_cli.py --cleanup
 ```
 
-## 🎛️ Interface Overview
-
-### Main Window Layout
-
-```
-[File] [View]                                                    [✕]
-────────────────────────────────────────────────────────────────────
-💡 Drag image to move • Drag corners to resize • Ctrl+R to reset
-
-┌─────────────────────────────────┬─────────────────────────────────┐
-│ Monitor Layout & Preview        │ Output Configuration            │
-│                                 │ ┌─────────────────────────────┐ │
-│  ┌─────┐    ┌─────┐            │ │ Output │ Resolution │ Pos... │ │
-│  │ DP-1│    │DP-2 │            │ │ DP-1   │ 2560x1440  │ 0,0    │ │
-│  │     │    │     │            │ │ DP-2   │ 2560x1440  │ 2560,0 │ │
-│  └─────┘    └─────┘            │ └─────────────────────────────┘ │
-│                                 │                    [🔄 Refresh] │
-│  [Background Preview Here]      │                                 │
-│                                 │ Image Preview                   │
-│                                 │ Image: filename.jpg             │
-│                                 │ Size: 1920×1080                 │
-│                                 │ ┌─────────────────────────────┐ │
-│                                 │ │    [Image Thumbnail]        │ │
-│                                 │ └─────────────────────────────┘ │
-│                                 │        [Mode ▼] [📁 Load Image] │
-└─────────────────────────────────┴─────────────────────────────────┘
-
-Status: Ready...                                    [🔄 Reset] [💾 Save]
-```
-
-### Menu Structure
-
-**File Menu:**
-- Select Sway Config... *(choose config file)*
-- Quit
-
-**View Menu:**
-- Show Config Path *(display current config file)*
-- Show Backgrounds Directory *(show where backgrounds are stored)*
-
 ## 🔧 Background Modes
 
 | Mode | Description | Use Case |
@@ -147,61 +107,14 @@ Status: Ready...                                    [🔄 Reset] [💾 Save]
 
 ## 🎮 Controls
 
-### Visual Controls
-- **Drag Image**: Click and drag to move image position
-- **Resize Corners**: Drag white corner handles to scale image
-- **Monitor Selection**: Click monitors to select and configure
-- **Monitor Movement**: Drag selected monitors to reposition
-
-### Keyboard Shortcuts
-- **Ctrl+R**: Reset image position and scale to defaults
-
-### Mouse Controls
-- **Left Click**: Select monitor or start dragging
-- **Drag**: Move image or monitor
-- **Corner Drag**: Resize image proportionally
-
-## 📁 File Structure
-
-```
-~/.config/sway/backgrounds/
-├── current_config.json          # Current background configuration
-├── restore_background.sh        # Startup restoration script
-├── image_DP-1.png              # Processed background for monitor 1
-├── image_DP-2.png              # Processed background for monitor 2
-└── image_original.jpg          # Original image copy
-```
-
-## ⚙️ Configuration
-
-### Automatic Startup
-SwayBG+ automatically adds this line to your sway config:
-```bash
-exec ~/.config/sway/backgrounds/restore_background.sh
-```
-
-### Manual Configuration
-You can also manually configure backgrounds:
-```bash
-# Apply specific background mode
-swaybg -o DP-1 -i ~/.config/sway/backgrounds/image_DP-1.png -m stretch
-```
 
 ## 🔍 Troubleshooting
 
 ### Common Issues
 
-**Background doesn't persist after reboot:**
-- Check if startup script was added to sway config
-- Verify script permissions: `chmod +x ~/.config/sway/backgrounds/restore_background.sh`
-
 **Resolution dropdown is empty:**
 - Ensure monitor is connected and active
 - Check `swaymsg -t get_outputs` for available modes
-
-**Image positioning feels inverted:**
-- This has been fixed in recent versions
-- Try resetting position with Ctrl+R
 
 **GUI won't start:**
 - Install GTK dependencies: `sudo pacman -S python-gobject gtk3`
@@ -237,7 +150,7 @@ python3 swaybgplus_cli.py --restore
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Ancillary License - see the [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 
@@ -245,6 +158,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 🐛 Bug Reports
 
+.. coming soon ..
 Please report bugs and feature requests through the GitHub issue tracker.
 
 ## 🔄 Screen Orientation

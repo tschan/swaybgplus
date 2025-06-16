@@ -1,0 +1,153 @@
+.TH SWAYBGPLUS 1 "November 2024" "SwayBG+ 1.0.0" "User Commands"
+.SH NAME
+swaybgplus \- advanced multi-monitor background manager for Sway with screen orientation support
+.SH SYNOPSIS
+.B swaybgplus
+[\fIOPTIONS\fR] [\fIIMAGE\fR]
+.br
+.B swaybgplus-gui
+.br  
+.B swaybgplus-cli
+[\fIOPTIONS\fR] [\fIIMAGE\fR]
+.SH DESCRIPTION
+SwayBG+ is a powerful, feature-rich background manager specifically designed for Sway window manager. It provides both GUI and CLI interfaces for managing backgrounds across multiple monitors with advanced positioning, scaling, and screen orientation features.
+
+The tool supports multiple background modes including stretched backgrounds across all monitors, fitted backgrounds on individual monitors, and full support for rotated displays including portrait mode monitors.
+
+.SH OPTIONS
+.TP
+.BR \-m ", " \-\-mode =\fIMODE\fR
+Set background mode. Valid modes are: stretched, fill, fit, center, tile.
+Default is 'stretched'.
+.TP
+.BR \-o ", " \-\-orientation =\fIOUTPUT:TRANSFORM\fR
+Set monitor orientation. Can be used multiple times for different monitors.
+Format: OUTPUT:TRANSFORM where TRANSFORM is one of:
+normal, 90, 180, 270, flipped, flipped-90, flipped-180, flipped-270.
+.TP
+.BR \-\-offset\-x =\fIX\fR
+Set horizontal image offset (default: 0).
+.TP
+.BR \-\-offset\-y =\fIY\fR
+Set vertical image offset (default: 0).
+.TP
+.BR \-\-scale =\fISCALE\fR
+Set image scale factor (default: 1.0).
+.TP
+.BR \-r ", " \-\-restore
+Restore saved background configuration.
+.TP
+.BR \-l ", " \-\-list\-outputs
+List current outputs with their configurations.
+.TP
+.BR \-c ", " \-\-config =\fIPATH\fR
+Specify path to sway config file.
+.TP
+.BR \-\-cleanup
+Clean up old background files.
+.TP
+.BR \-h ", " \-\-help
+Show help message and exit.
+
+.SH BACKGROUND MODES
+.TP
+.B stretched
+Single image stretched across all monitors (panoramic wallpapers).
+.TP
+.B fill
+Image scaled to fill each monitor, maintaining aspect ratio (may crop).
+.TP
+.B fit
+Image scaled to fit each monitor, maintaining aspect ratio (may letterbox).
+.TP
+.B center
+Image centered on each monitor at original size.
+.TP
+.B tile
+Image repeated across each monitor.
+
+.SH SCREEN ORIENTATIONS
+SwayBG+ supports all standard screen transformations:
+.TP
+.B normal
+No rotation (standard landscape).
+.TP
+.B 90
+90° clockwise rotation (portrait mode).
+.TP
+.B 180
+180° rotation (upside down).
+.TP
+.B 270
+270° clockwise rotation (portrait mode, other direction).
+.TP
+.B flipped
+Horizontal flip (mirrored).
+.TP
+.B flipped-90, flipped-180, flipped-270
+Combination of rotation and horizontal flip.
+
+.SH EXAMPLES
+.TP
+Set a stretched background across all monitors:
+.B swaybgplus wallpaper.jpg --mode stretched
+.TP
+Set a monitor to portrait orientation:
+.B swaybgplus --orientation DP-1:90
+.TP
+Set background with rotated monitor:
+.B swaybgplus wallpaper.jpg --mode stretched --orientation DP-1:90
+.TP
+Set multiple monitor orientations:
+.B swaybgplus --orientation DP-1:90 --orientation HDMI-A-1:180
+.TP
+Restore saved configuration:
+.B swaybgplus --restore
+.TP
+Launch GUI interface:
+.B swaybgplus-gui
+
+.SH FILES
+.TP
+.I ~/.config/sway/backgrounds/
+Directory where background images and configuration are stored.
+.TP
+.I ~/.config/sway/backgrounds/current_config.json
+Current background configuration file.
+.TP
+.I ~/.config/sway/backgrounds/restore_background.sh
+Startup restoration script automatically added to sway config.
+.TP
+.I ~/.config/sway/config
+Sway configuration file (modified to add startup restoration).
+
+.SH DEPENDENCIES
+.TP
+.B sway
+Sway window manager
+.TP
+.B swaybg
+Background setter for sway
+.TP
+.B python3
+Python 3.6 or later
+.TP
+.B python3-pillow
+Python Imaging Library
+.TP
+.B python3-gobject (optional)
+Required for GUI interface
+.TP
+.B gtk3 (optional)
+Required for GUI interface
+
+.SH AUTHORS
+SwayBG+ Contributors
+
+.SH BUGS
+Report bugs at: https://github.com/yourusername/swaybgplus/issues
+
+.SH SEE ALSO
+.BR sway (5),
+.BR swaybg (1),
+.BR swaymsg (1) 

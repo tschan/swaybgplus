@@ -41,6 +41,8 @@ SwayBG+ is a powerful, feature-rich background manager specifically designed for
 
 ### Installation
 
+#### 🔧 Manual Installation
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/swaybgplus.git
@@ -49,8 +51,38 @@ cd swaybgplus
 # Install dependencies
 pip install -r requirements.txt
 
-# Make executable
-python setup.py
+# Install the package
+python setup.py install
+
+# Or install in development mode
+pip install -e .
+```
+
+#### 📋 Dependencies
+
+**Required:**
+- Python 3.6+
+- Sway window manager
+- swaybg (background setter)
+- python-pillow (image processing)
+
+**For GUI (optional):**
+- python-gobject
+- gtk3
+
+**Arch Linux:**
+```bash
+sudo pacman -S sway swaybg python python-pillow python-gobject gtk3
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install sway swaybg python3 python3-pil python3-gi python3-gi-cairo gir1.2-gtk-3.0
+```
+
+**Fedora:**
+```bash
+sudo dnf install sway swaybg python3 python3-pillow python3-gobject gtk3-devel
 ```
 
 ### GUI Usage

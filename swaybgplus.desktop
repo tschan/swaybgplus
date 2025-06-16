@@ -1,0 +1,18 @@
+[Desktop Entry]
+Name=SwayBG+
+GenericName=Background Manager
+Comment=Advanced multi-monitor background manager for Sway with screen orientation support
+Exec=swaybgplus-gui
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Type=Application
+Categories=Settings;DesktopSettings;System;
+Keywords=wallpaper;background;sway;monitor;multi-monitor;orientation;wayland;
+StartupNotify=true
+StartupWMClass=swaybgplus-gui
+MimeType=image/jpeg;image/png;image/gif;image/bmp;image/tiff;image/webp;
+Actions=CLI;
+
+[Desktop Action CLI]
+Name=Open CLI Version
+Exec=swaybgplus-cli --list-outputs 

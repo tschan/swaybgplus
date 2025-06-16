@@ -1,207 +1,130 @@
 #!/usr/bin/env python3
 """
-Setup script for SwayBG+ installation
+Setup script for SwayBG+ - Advanced Multi-Monitor Background Manager for Sway
 """
 
 import os
 import sys
-import shutil
-import subprocess
-from pathlib import Path
+from setuptools import setup, find_packages
 
-
-def check_dependencies():
-    """Check if required dependencies are available"""
-    print("Checking dependencies...")
-    
-    # Check for swaybg
-    if not shutil.which('swaybg'):
-        print("❌ swaybg not found")
-        print("Please install swaybg:")
-        print("  Arch Linux: sudo pacman -S swaybg")
-        print("  Ubuntu/Debian: sudo apt install swaybg")
-        print("  Fedora: sudo dnf install swaybg")
-        return False
-    else:
-        print("✅ swaybg found")
-    
-    # Check for swaymsg
-    if not shutil.which('swaymsg'):
-        print("❌ swaymsg not found")
-        print("Please install sway window manager")
-        return False
-    else:
-        print("✅ swaymsg found")
-    
-    # Check Python version
-    if sys.version_info < (3, 7):
-        print("❌ Python 3.7+ required")
-        return False
-    else:
-        print(f"✅ Python {sys.version_info.major}.{sys.version_info.minor} found")
-    
-    # Check for PIL
+# Read the README file for long description
+def read_readme():
+    """Read README.md for long description"""
     try:
-        import PIL
-        print("✅ Pillow (PIL) found")
-    except ImportError:
-        print("❌ Pillow (PIL) not found")
-        print("Install with: pip install Pillow")
-        return False
-    
-    # Check for GTK (optional)
+        with open("README.md", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "Advanced multi-monitor background manager for Sway with screen orientation support"
+
+# Read version from a version file or set default
+def get_version():
+    """Get version from __version__.py or default"""
     try:
-        import gi
-        gi.require_version('Gtk', '3.0')
-        from gi.repository import Gtk
-        print("✅ GTK+ dependencies found (GUI available)")
-        return True
-    except (ImportError, ValueError):
-        print("⚠️  GTK+ dependencies not found (GUI not available)")
-        print("For GUI support, install:")
-        print("  Arch Linux: sudo pacman -S python-gobject gtk3")
-        print("  Ubuntu/Debian: sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0")
-        print("  Fedora: sudo dnf install python3-gobject gtk3-devel")
-        return "cli-only"
+        with open("__version__.py", "r") as f:
+            exec(f.read())
+            return locals()['__version__']
+    except FileNotFoundError:
+        return "1.0.0"
 
+# Check Python version
+if sys.version_info < (3, 6):
+    print("Error: SwayBG+ requires Python 3.6 or later.")
+    sys.exit(1)
 
-def make_executable():
-    """Make Python scripts executable"""
-    scripts = [
-        'swaybgplus_cli.py',
-        'swaybgplus_gui.py',
-        'sway_config_parser.py',
-        'background_manager.py'
-    ]
-    
-    for script in scripts:
-        if os.path.exists(script):
-            os.chmod(script, 0o755)
-            print(f"✅ Made {script} executable")
+# Check if we're on a supported platform
+if sys.platform not in ['linux', 'linux2']:
+    print("Warning: SwayBG+ is designed for Linux systems with Sway window manager.")
 
+setup(
+    name="swaybgplus",
+    version=get_version(),
+    author="SwayBG+ Contributors",
+    author_email="swaybgplus@example.com",
+    description="Advanced multi-monitor background manager for Sway with screen orientation support",
+    long_description=read_readme(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/yourusername/swaybgplus",
+    project_urls={
+        "Bug Reports": "https://github.com/yourusername/swaybgplus/issues",
+        "Source": "https://github.com/yourusername/swaybgplus",
+        "Documentation": "https://github.com/yourusername/swaybgplus/blob/main/README.md",
+    },
+    packages=find_packages(),
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Environment :: X11 Applications :: GTK",
+        "Environment :: Wayland",
+        "Intended Audience :: End Users/Desktop",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Topic :: Desktop Environment",
+        "Topic :: Multimedia :: Graphics",
+        "Topic :: System :: Systems Administration",
+    ],
+    keywords="sway wayland background wallpaper monitor multi-monitor orientation",
+    python_requires=">=3.6",
+    install_requires=[
+        "Pillow>=7.0.0",
+        "PyGObject>=3.30.0",
+    ],
+    extras_require={
+        "dev": [
+            "pytest>=6.0",
+            "black>=21.0",
+            "flake8>=3.8",
+        ],
+    },
+    entry_points={
+        "console_scripts": [
+            "swaybgplus=swaybgplus_cli:main",
+            "swaybgplus-cli=swaybgplus_cli:main",
+            "swaybgplus-gui=swaybgplus_gui:main",
+        ],
+    },
+    scripts=[
+        "swaybgplus_cli.py",
+        "swaybgplus_gui.py",
+    ],
+    data_files=[
+        ("share/applications", ["swaybgplus.desktop"]),
+        ("share/doc/swaybgplus", ["README.md"]),
+        ("share/man/man1", ["swaybgplus.1"]) if os.path.exists("swaybgplus.1") else [],
+    ],
+    include_package_data=True,
+    zip_safe=False,
+    platforms=["linux"],
+)
 
-def create_desktop_entry():
-    """Create a desktop entry for the GUI application"""
-    desktop_dir = Path.home() / '.local/share/applications'
-    desktop_dir.mkdir(parents=True, exist_ok=True)
-    
-    desktop_file = desktop_dir / 'swaybgplus.desktop'
-    current_dir = Path.cwd()
-    
-    desktop_content = f"""[Desktop Entry]
-Name=SwayBG+
-Comment=Multi-monitor background manager for Sway
-Exec=python3 {current_dir}/swaybgplus_gui.py
-Icon=preferences-desktop-wallpaper
-Terminal=false
-Type=Application
-Categories=Settings;DesktopSettings;
-Keywords=wallpaper;background;sway;monitor;
-"""
-    
-    with open(desktop_file, 'w') as f:
-        f.write(desktop_content)
-    
-    print(f"✅ Created desktop entry: {desktop_file}")
-
-
-def create_symlinks():
-    """Create symbolic links in ~/.local/bin"""
-    bin_dir = Path.home() / '.local/bin'
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    
-    current_dir = Path.cwd()
-    
-    # Create symlinks
-    symlinks = [
-        ('swaybgplus_cli.py', 'swaybgplus'),
-        ('swaybgplus_gui.py', 'swaybgplus-gui'),
-    ]
-    
-    for source, target in symlinks:
-        source_path = current_dir / source
-        target_path = bin_dir / target
-        
-        if target_path.exists():
-            target_path.unlink()
-        
-        try:
-            target_path.symlink_to(source_path)
-            print(f"✅ Created symlink: {target_path} -> {source_path}")
-        except OSError as e:
-            print(f"❌ Failed to create symlink {target}: {e}")
-    
-    # Check if ~/.local/bin is in PATH
-    local_bin = str(bin_dir)
-    if local_bin not in os.environ.get('PATH', ''):
-        print(f"⚠️  {local_bin} is not in your PATH")
-        print("Add this to your shell profile (.bashrc, .zshrc, etc.):")
-        print(f"export PATH=\"$PATH:{local_bin}\"")
-
-
-def test_installation():
-    """Test if the installation works"""
-    print("\nTesting installation...")
-    
-    try:
-        # Test CLI
-        result = subprocess.run([
-            sys.executable, 'swaybgplus_cli.py', 'list-outputs'
-        ], capture_output=True, text=True, timeout=10)
-        
-        if result.returncode == 0:
-            print("✅ CLI interface works")
-        else:
-            print("❌ CLI interface failed")
-            print(f"Error: {result.stderr}")
-            return False
-    except Exception as e:
-        print(f"❌ CLI test failed: {e}")
-        return False
-    
-    return True
-
-
-def main():
-    """Main setup function"""
-    print("SwayBG+ Setup")
-    print("=" * 50)
-    
-    # Check dependencies
-    deps_result = check_dependencies()
-    if deps_result is False:
-        print("\n❌ Missing required dependencies. Please install them first.")
-        return 1
-    
-    print("\n" + "=" * 50)
-    print("Setting up SwayBG+...")
-    
-    # Make scripts executable
-    make_executable()
-    
-    # Create symlinks
-    create_symlinks()
-    
-    # Create desktop entry if GUI is available
-    if deps_result is True:
-        create_desktop_entry()
-    
-    # Test installation
-    if test_installation():
-        print("\n" + "=" * 50)
-        print("✅ SwayBG+ setup completed successfully!")
-        print("\nUsage:")
-        print("  Command line: swaybgplus stretch /path/to/image.jpg")
-        print("  Command line: python3 swaybgplus_cli.py --help")
-        if deps_result is True:
-            print("  GUI: swaybgplus-gui")
-            print("  GUI: python3 swaybgplus_gui.py")
-        print("\nSee README.md for more information.")
-        return 0
-    else:
-        print("\n❌ Setup completed with errors. Check output above.")
-        return 1
-
+# Post-installation message
+def post_install():
+    print("\n" + "="*60)
+    print("🎉 SwayBG+ installed successfully!")
+    print("="*60)
+    print("📱 CLI Usage:")
+    print("   swaybgplus image.jpg --mode stretched")
+    print("   swaybgplus --orientation DP-1:90")
+    print()
+    print("🖥️  GUI Usage:")
+    print("   swaybgplus-gui")
+    print()
+    print("📖 Documentation:")
+    print("   man swaybgplus")
+    print("   /usr/share/doc/swaybgplus/README.md")
+    print()
+    print("🔧 First time setup:")
+    print("   1. Make sure Sway and swaybg are installed")
+    print("   2. Run: swaybgplus-gui to configure monitors")
+    print("   3. Load an image and apply backgrounds")
+    print("="*60)
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    setup()
+    if "install" in sys.argv:
+        post_install() 

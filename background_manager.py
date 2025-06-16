@@ -117,6 +117,16 @@ fi
         except Exception as e:
             print(f"Error adding to sway config: {e}")
     
+    def get_effective_resolution(self, output: OutputConfig) -> Tuple[int, int]:
+        """Get the effective resolution accounting for transform/rotation"""
+        width, height = output.resolution
+        
+        # For 90 and 270 degree rotations, swap width and height
+        if output.transform in ['90', '270', 'flipped-90', 'flipped-270']:
+            return (height, width)
+        else:
+            return (width, height)
+    
     def create_stretched_background(self, image_path: str, outputs: List[OutputConfig], 
                                   image_offset: Tuple[int, int] = (0, 0), image_scale: float = 1.0) -> str:
         """Create a single stretched background image spanning all outputs"""
@@ -129,11 +139,13 @@ fi
         except Exception as e:
             raise ValueError(f"Could not load image: {e}")
         
-        # Calculate total canvas size
+        # Calculate total canvas size using effective resolutions
         min_x = min(output.position[0] for output in outputs)
         min_y = min(output.position[1] for output in outputs)
-        max_x = max(output.position[0] + output.resolution[0] for output in outputs)
-        max_y = max(output.position[1] + output.resolution[1] for output in outputs)
+        
+        # Use effective resolution that accounts for transforms
+        max_x = max(output.position[0] + self.get_effective_resolution(output)[0] for output in outputs)
+        max_y = max(output.position[1] + self.get_effective_resolution(output)[1] for output in outputs)
         
         canvas_width = max_x - min_x
         canvas_height = max_y - min_y
@@ -185,11 +197,13 @@ fi
         except Exception as e:
             raise ValueError(f"Could not load image: {e}")
         
-        # Calculate total canvas size
+        # Calculate total canvas size using effective resolutions
         min_x = min(output.position[0] for output in outputs)
         min_y = min(output.position[1] for output in outputs)
-        max_x = max(output.position[0] + output.resolution[0] for output in outputs)
-        max_y = max(output.position[1] + output.resolution[1] for output in outputs)
+        
+        # Use effective resolution that accounts for transforms
+        max_x = max(output.position[0] + self.get_effective_resolution(output)[0] for output in outputs)
+        max_y = max(output.position[1] + self.get_effective_resolution(output)[1] for output in outputs)
         
         canvas_width = max_x - min_x
         canvas_height = max_y - min_y
@@ -203,13 +217,16 @@ fi
         output_images = []
         
         for output in outputs:
-            # Calculate crop area for this output
+            # Get effective resolution for this output (accounts for rotation)
+            effective_width, effective_height = self.get_effective_resolution(output)
+            
+            # Calculate crop area for this output using effective resolution
             crop_x = output.position[0] - min_x
             crop_y = output.position[1] - min_y
-            crop_width = output.resolution[0]
-            crop_height = output.resolution[1]
+            crop_width = effective_width
+            crop_height = effective_height
             
-            # Create canvas for this output
+            # Create canvas for this output using effective resolution
             output_canvas = Image.new('RGB', (crop_width, crop_height), (0, 0, 0))
             
             # Calculate where to place the image on this output

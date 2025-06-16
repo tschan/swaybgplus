@@ -11,7 +11,7 @@ from gi.repository import Gtk, GdkPixbuf, Gdk, GLib, Gio, GObject
 import os
 import sys
 import threading
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from PIL import Image
 import cairo
 import subprocess
@@ -75,16 +75,28 @@ class MonitorWidget(Gtk.DrawingArea):
         self.preview_image = None
         self.queue_draw()
     
+    def get_effective_resolution(self, output: OutputConfig) -> Tuple[int, int]:
+        """Get the effective resolution accounting for transform/rotation"""
+        width, height = output.resolution
+        
+        # For 90 and 270 degree rotations, swap width and height
+        if output.transform in ['90', '270', 'flipped-90', 'flipped-270']:
+            return (height, width)
+        else:
+            return (width, height)
+    
     def update_scale(self):
         """Update scale factor based on monitor layout"""
         if not self.outputs:
             return
         
-        # Find total bounds
+        # Find total bounds using effective resolutions
         min_x = min(output.position[0] for output in self.outputs)
         min_y = min(output.position[1] for output in self.outputs)
-        max_x = max(output.position[0] + output.resolution[0] for output in self.outputs)
-        max_y = max(output.position[1] + output.resolution[1] for output in self.outputs)
+        
+        # Use effective resolution for max calculations
+        max_x = max(output.position[0] + self.get_effective_resolution(output)[0] for output in self.outputs)
+        max_y = max(output.position[1] + self.get_effective_resolution(output)[1] for output in self.outputs)
         
         total_width = max_x - min_x
         total_height = max_y - min_y
@@ -107,15 +119,19 @@ class MonitorWidget(Gtk.DrawingArea):
         cr.set_source_rgb(0.2, 0.2, 0.2)
         cr.paint()
         
-        # Find offset to center the layout
+        # Find offset to center the layout using effective resolutions
         min_x = min(output.position[0] for output in self.outputs)
         min_y = min(output.position[1] for output in self.outputs)
+        
+        # Use effective resolution for max calculations
+        max_x = max(output.position[0] + self.get_effective_resolution(output)[0] for output in self.outputs)
+        max_y = max(output.position[1] + self.get_effective_resolution(output)[1] for output in self.outputs)
         
         widget_width = widget.get_allocated_width()
         widget_height = widget.get_allocated_height()
         
-        offset_x = (widget_width - (max(output.position[0] + output.resolution[0] for output in self.outputs) - min_x) * self.scale_factor) / 2
-        offset_y = (widget_height - (max(output.position[1] + output.resolution[1] for output in self.outputs) - min_y) * self.scale_factor) / 2
+        offset_x = (widget_width - (max_x - min_x) * self.scale_factor) / 2
+        offset_y = (widget_height - (max_y - min_y) * self.scale_factor) / 2
         
         # Prepare preview image if available
         preview_surface = None
@@ -145,10 +161,13 @@ class MonitorWidget(Gtk.DrawingArea):
         
         # Draw each monitor
         for output in self.outputs:
+            # Use effective resolution for drawing
+            effective_width, effective_height = self.get_effective_resolution(output)
+            
             x = (output.position[0] - min_x) * self.scale_factor + offset_x
             y = (output.position[1] - min_y) * self.scale_factor + offset_y
-            width = output.resolution[0] * self.scale_factor
-            height = output.resolution[1] * self.scale_factor
+            width = effective_width * self.scale_factor
+            height = effective_height * self.scale_factor
             
             # Draw monitor background color first
             if output == self.selected_output:
@@ -172,8 +191,6 @@ class MonitorWidget(Gtk.DrawingArea):
                 if self.preview_mode == "stretched":
                     # For stretched mode, we need to match the background manager's logic exactly
                     # Calculate virtual screen dimensions (same as background manager)
-                    max_x = max(output.position[0] + output.resolution[0] for output in self.outputs)
-                    max_y = max(output.position[1] + output.resolution[1] for output in self.outputs)
                     virtual_width = max_x - min_x
                     virtual_height = max_y - min_y
                     
@@ -189,7 +206,7 @@ class MonitorWidget(Gtk.DrawingArea):
                     virtual_img_x = (virtual_width - scaled_width) // 2 + self.image_offset[0]
                     virtual_img_y = (virtual_height - scaled_height) // 2 + self.image_offset[1]
                     
-                    # Position of this monitor in the virtual screen
+                    # Position of this monitor in the virtual screen (using effective resolution)
                     monitor_x_in_virtual = output.position[0] - min_x
                     monitor_y_in_virtual = output.position[1] - min_y
                     
@@ -199,7 +216,7 @@ class MonitorWidget(Gtk.DrawingArea):
                     img_y_on_monitor = virtual_img_y - monitor_y_in_virtual
                     
                     # Only draw if the image intersects with this monitor
-                    if (img_x_on_monitor < output.resolution[0] and img_y_on_monitor < output.resolution[1] and 
+                    if (img_x_on_monitor < effective_width and img_y_on_monitor < effective_height and 
                         img_x_on_monitor + scaled_width > 0 and img_y_on_monitor + scaled_height > 0):
                         
                         # Calculate the portion of the image that fits on this monitor
@@ -208,8 +225,8 @@ class MonitorWidget(Gtk.DrawingArea):
                         dst_x = max(0, img_x_on_monitor)
                         dst_y = max(0, img_y_on_monitor)
                         
-                        copy_width = min(scaled_width - src_x, output.resolution[0] - dst_x)
-                        copy_height = min(scaled_height - src_y, output.resolution[1] - dst_y)
+                        copy_width = min(scaled_width - src_x, effective_width - dst_x)
+                        copy_height = min(scaled_height - src_y, effective_height - dst_y)
                         
                         if copy_width > 0 and copy_height > 0:
                             # Apply transformations: translate to monitor position, scale for display
@@ -235,7 +252,7 @@ class MonitorWidget(Gtk.DrawingArea):
                 elif self.preview_mode == "fill":
                     # Scale image to fill monitor, maintaining aspect ratio
                     img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
-                    monitor_width, monitor_height = output.resolution[0], output.resolution[1]
+                    monitor_width, monitor_height = effective_width, effective_height
                     
                     scale_x = monitor_width / img_width
                     scale_y = monitor_height / img_height
@@ -257,7 +274,7 @@ class MonitorWidget(Gtk.DrawingArea):
                 elif self.preview_mode == "fit":
                     # Scale image to fit monitor, maintaining aspect ratio
                     img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
-                    monitor_width, monitor_height = output.resolution[0], output.resolution[1]
+                    monitor_width, monitor_height = effective_width, effective_height
                     
                     scale_x = monitor_width / img_width
                     scale_y = monitor_height / img_height
@@ -279,7 +296,7 @@ class MonitorWidget(Gtk.DrawingArea):
                 elif self.preview_mode == "center":
                     # Center image with manual scaling
                     img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
-                    monitor_width, monitor_height = output.resolution[0], output.resolution[1]
+                    monitor_width, monitor_height = effective_width, effective_height
                     
                     # Apply manual scaling
                     scaled_width = img_width * self.image_scale
@@ -297,7 +314,7 @@ class MonitorWidget(Gtk.DrawingArea):
                 elif self.preview_mode == "tile":
                     # Tile image across monitor with manual scaling
                     img_width, img_height = preview_surface.get_width(), preview_surface.get_height()
-                    monitor_width, monitor_height = output.resolution[0], output.resolution[1]
+                    monitor_width, monitor_height = effective_width, effective_height
                     
                     cr.translate(x, y)
                     cr.scale(self.scale_factor, self.scale_factor)
@@ -330,33 +347,24 @@ class MonitorWidget(Gtk.DrawingArea):
             cr.rectangle(x, y, width, height)
             cr.stroke()
             
-            # Always draw monitor name and resolution (on top of everything)
-            cr.set_source_rgb(1, 1, 1)
-            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+            # Draw monitor label
+            cr.set_source_rgb(1, 1, 1)  # White text
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
             cr.set_font_size(12)
             
-            text = f"{output.name}\n{output.resolution[0]}x{output.resolution[1]}"
+            # Include transform information if not normal
+            transform_text = f" ({output.transform})" if output.transform != "normal" else ""
+            text = f"{output.name}\n{effective_width}x{effective_height}{transform_text}"
             text_lines = text.split('\n')
             
-            # Calculate text positioning
-            text_extents = cr.text_extents(text_lines[0])
-            text_width = max(cr.text_extents(line).width for line in text_lines)
-            text_height = len(text_lines) * 15
+            # Calculate text position to center in monitor
+            text_height = len(text_lines) * 15  # Rough line height
+            text_y = y + (height - text_height) / 2 + 15  # Center vertically
             
-            text_x = x + (width - text_width) / 2
-            text_y = y + (height - text_height) / 2 + 12  # +12 for baseline offset
-            
-            # Draw text background for better readability (semi-transparent black)
-            cr.set_source_rgba(0, 0, 0, 0.8)
-            cr.rectangle(text_x - 8, text_y - 15, text_width + 16, text_height + 8)
-            cr.fill()
-            
-            # Draw text (white on dark background)
-            cr.set_source_rgb(1, 1, 1)
             for i, line in enumerate(text_lines):
-                line_extents = cr.text_extents(line)
-                line_x = x + (width - line_extents.width) / 2
-                cr.move_to(line_x, text_y + i * 15)
+                text_extents = cr.text_extents(line)
+                text_x = x + (width - text_extents.width) / 2  # Center horizontally
+                cr.move_to(text_x, text_y + i * 15)
                 cr.show_text(line)
         
         # Draw resize handles if image is loaded
@@ -860,13 +868,13 @@ class SwayBGPlusGUI:
         
         # Instructions label
         instructions = Gtk.Label()
-        instructions.set_markup("<i>Double-click position, resolution, or scale values to edit</i>")
+        instructions.set_markup("<i>Double-click position, resolution, scale, or transform values to edit</i>")
         instructions.set_halign(Gtk.Align.START)
         list_box.pack_start(instructions, False, False, 0)
         
         # Output list with editable cells
-        # Store: name, resolution, position, scale, enabled, output_object
-        self.output_store = Gtk.ListStore(str, str, str, str, bool, object)
+        # Store: name, resolution, position, scale, transform, enabled, output_object
+        self.output_store = Gtk.ListStore(str, str, str, str, str, bool, object)
         self.output_tree = Gtk.TreeView(model=self.output_store)
         self.output_tree.set_grid_lines(Gtk.TreeViewGridLines.BOTH)
         
@@ -922,11 +930,30 @@ class SwayBGPlusGUI:
         column.set_resizable(True)
         self.output_tree.append_column(column)
         
+        # Transform/Orientation column (editable dropdown)
+        self.transform_renderer = Gtk.CellRendererCombo()
+        self.transform_renderer.set_property("editable", True)
+        
+        # Create transform model with valid transforms
+        transform_model = Gtk.ListStore(str)
+        valid_transforms = ['normal', '90', '180', '270', 'flipped', 'flipped-90', 'flipped-180', 'flipped-270']
+        for transform in valid_transforms:
+            transform_model.append([transform])
+        
+        self.transform_renderer.set_property("model", transform_model)
+        self.transform_renderer.set_property("text-column", 0)
+        self.transform_renderer.connect("edited", self.on_transform_edited)
+        
+        column = Gtk.TreeViewColumn("Transform", self.transform_renderer, text=4)
+        column.set_min_width(100)
+        column.set_resizable(True)
+        self.output_tree.append_column(column)
+        
         # Enabled column (checkbox)
         enabled_renderer = Gtk.CellRendererToggle()
         enabled_renderer.connect("toggled", self.on_enabled_toggled)
         
-        column = Gtk.TreeViewColumn("Enabled", enabled_renderer, active=4)
+        column = Gtk.TreeViewColumn("Enabled", enabled_renderer, active=5)
         column.set_min_width(80)
         self.output_tree.append_column(column)
         
@@ -959,6 +986,7 @@ class SwayBGPlusGUI:
                 f"{output.resolution[0]}x{output.resolution[1]}",
                 f"{output.position[0]}, {output.position[1]}",
                 f"{output.scale:.1f}",
+                output.transform,
                 output.enabled,
                 output
             ])
@@ -983,7 +1011,7 @@ class SwayBGPlusGUI:
         
         # Find and select in tree view
         for i, row in enumerate(self.output_store):
-            if row[5] == output:  # Compare output objects
+            if row[6] == output:  # Compare output objects
                 selection = self.output_tree.get_selection()
                 selection.select_iter(self.output_store.get_iter(i))
                 break
@@ -1003,6 +1031,7 @@ class SwayBGPlusGUI:
                 f"{output.resolution[0]}x{output.resolution[1]}",
                 f"{output.position[0]}, {output.position[1]}",
                 f"{output.scale:.1f}",
+                output.transform,
                 output.enabled,
                 output
             ])
@@ -1011,7 +1040,7 @@ class SwayBGPlusGUI:
         """Handle tree selection change"""
         model, tree_iter = selection.get_selected()
         if tree_iter:
-            output = model[tree_iter][5]  # Get output object from column 5
+            output = model[tree_iter][6]  # Get output object from column 6 (updated index)
             self.selected_output = output
             self.monitor_widget.selected_output = output
             self.monitor_widget.queue_draw()
@@ -1037,7 +1066,7 @@ class SwayBGPlusGUI:
     def on_resolution_edited(self, renderer, path, new_text):
         """Handle resolution cell editing"""
         tree_iter = self.output_store.get_iter(path)
-        output = self.output_store[tree_iter][5]  # Get output object
+        output = self.output_store[tree_iter][6]  # Get output object
         
         # Update resolution dropdown with available resolutions for this output
         available_resolutions = self.parser.get_available_resolutions(output.name)
@@ -1072,7 +1101,7 @@ class SwayBGPlusGUI:
     def on_position_edited(self, renderer, path, new_text):
         """Handle position cell editing"""
         tree_iter = self.output_store.get_iter(path)
-        output = self.output_store[tree_iter][5]  # Get output object
+        output = self.output_store[tree_iter][6]  # Get output object
         
         # Parse position - accept formats like "0,0" or "0, 0" or "0 0"
         try:
@@ -1094,7 +1123,7 @@ class SwayBGPlusGUI:
     def on_scale_edited(self, renderer, path, new_text):
         """Handle scale cell editing"""
         tree_iter = self.output_store.get_iter(path)
-        output = self.output_store[tree_iter][5]  # Get output object
+        output = self.output_store[tree_iter][6]  # Get output object
         
         try:
             scale = float(new_text)
@@ -1111,11 +1140,11 @@ class SwayBGPlusGUI:
     def on_enabled_toggled(self, renderer, path):
         """Handle enabled checkbox toggle"""
         tree_iter = self.output_store.get_iter(path)
-        output = self.output_store[tree_iter][5]  # Get output object
+        output = self.output_store[tree_iter][6]  # Get output object
         
         # Toggle enabled state
         output.enabled = not output.enabled
-        self.output_store[tree_iter][4] = output.enabled
+        self.output_store[tree_iter][5] = output.enabled
         
         status = "enabled" if output.enabled else "disabled"
         self.update_status(f"{output.name} {status}")
@@ -1492,6 +1521,37 @@ class SwayBGPlusGUI:
     def mark_config_saved(self):
         """Mark configuration as saved"""
         self.config_changed = False
+    
+    def on_transform_edited(self, renderer, path, new_text):
+        """Handle transform cell editing"""
+        tree_iter = self.output_store.get_iter(path)
+        output = self.output_store[tree_iter][6]  # Get output object
+        
+        # Validate transform
+        valid_transforms = ['normal', '90', '180', '270', 'flipped', 'flipped-90', 'flipped-180', 'flipped-270']
+        if new_text not in valid_transforms:
+            self.show_error(f"Invalid transform '{new_text}'. Valid transforms: {', '.join(valid_transforms)}")
+            return
+        
+        try:
+            # Update output configuration
+            if self.parser.update_output_config(output.name, transform=new_text):
+                # Update the store
+                self.output_store[tree_iter][4] = new_text
+                # Update the output object
+                output.transform = new_text
+                self.mark_config_changed()
+                
+                # Auto-apply if user wants immediate changes
+                if hasattr(self, 'auto_apply_changes') and self.auto_apply_changes:
+                    self.parser.apply_output_config(output)
+                    self.refresh_outputs()  # Refresh to get updated state
+                else:
+                    self.update_status(f"Transform changed to {new_text} for {output.name} (click Apply to activate)")
+            else:
+                self.show_error(f"Failed to update transform for {output.name}")
+        except Exception as e:
+            self.show_error(f"Error updating transform: {e}")
     
     def run(self):
         """Run the application"""

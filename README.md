@@ -2,7 +2,7 @@
 
 SwayBG+ is a powerful, feature-rich background manager specifically designed for Sway window manager. It provides both GUI and CLI interfaces for managing backgrounds across multiple monitors with advanced positioning, scaling, and persistence features.
 
-![image](https://github.com/user-attachments/assets/8fc89b47-bf6d-4a5e-b1ee-1128554cdfd2)
+![image](https://github.com/user-attachments/assets/ccdfc39a-3d59-44f5-a921-20779ea32f67)
 
 ## 🌟 Features
 
